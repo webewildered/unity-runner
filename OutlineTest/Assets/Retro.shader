@@ -5,6 +5,8 @@ Shader "Unlit/Retro"
 	Properties
 	{
 		_MainTex ("Texture", 2D) = "white" {}
+		_Color ("Color", Color) = (0.66, 0, 1, 1)
+		_ShadeDarkness ("ShadeDarkness", Float) = 0.3
 		_LightDirection ("LightDirection", Vector) = (0, 0, 0, 0)
 	}
 	SubShader
@@ -24,6 +26,8 @@ Shader "Unlit/Retro"
 			
 			#include "UnityCG.cginc"
 
+			float4 _Color;
+			float _ShadeDarkness;
 			float4 _LightDirection;
 
 			struct appdata
@@ -68,17 +72,14 @@ Shader "Unlit/Retro"
 				shade = clamp(ceil(shade), 0, 2);	// 0 if dot<low, 1 if between low and high, 2 if over high
 				float bias = ((i.vertex.x + i.vertex.y - 1.0) % 2.0 );	// 0 or 1 for every other pixel
 				float shadeFactor = floor((shade + bias) / 2.0);	// darken every pixel with shade=2, every other pixel with shade=1, no pixel with shade = 0
-				shadeFactor = 0.0f; // TEMP TEST
 
 				// Highlighting
 				const float minHighlight = 1.98f;
 				const float highlight = floor((1.0 - lightDotNormal) / minHighlight);
 
 				// sample the texture
-				const fixed4 col = fixed4(0.66, 0, 1.0, 1.0);
-				const float darken = 0.3f;
 				const float lighten = 0.0f;//0.8f;
-				return saturate(col * (1-shadeFactor*darken) + lighten * float4(highlight, highlight, highlight, highlight));
+				return saturate(_Color * (1 - shadeFactor * _ShadeDarkness) + lighten * float4(highlight, highlight, highlight, highlight));
 			}
 			ENDCG
 		}
