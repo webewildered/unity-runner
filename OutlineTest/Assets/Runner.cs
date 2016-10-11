@@ -26,7 +26,7 @@ public class Runner : MonoBehaviour {
         speed = 1.0f;
         angularSpeed = 0.0f;
         up.Set(0, 1, 0);
-        acceleration = 0.02f;
+        acceleration = 0.05f;
         falling = false;
 
         idleMode = false;
@@ -55,15 +55,15 @@ public class Runner : MonoBehaviour {
             {
                 animator.SetTrigger("Fall");
                 falling = true;
-                velocity = (lastPosition - transform.position) * (1.0f / Time.deltaTime);
+                velocity = (transform.position - lastPosition) * (1.0f / Time.deltaTime);
             }
         }
 
         Quaternion targetCameraRotationWs;
         if (falling)
         {
-            const float gravity = 9.8f;
-            const float airGain = 0.5f;
+            const float gravity = 30.0f;
+            const float airGain = 1.0f;
 
             float airGainDt = Mathf.Min(airGain * Time.deltaTime, 1.0f);
             velocity *= (1.0f - airGainDt);
@@ -81,14 +81,19 @@ public class Runner : MonoBehaviour {
         else
         {
             const float magnifier = 1.5f;
-            const float maxAngularSpeed = 180.0f;
+            const float maxAngularSpeed = 65.0f;
             const float angularSpeedGain = 10.0f;
+            const float maxAngularAcceleration = 180.0f;
+
 
             // Rotate the character
             float angularSpeedGainDt = Mathf.Min(1.0f, angularSpeedGain * Time.deltaTime);
             float leftX = Mathf.Clamp(Input.GetAxis("LeftX") * magnifier, -1.0f, 1.0f);
-            float desiredAngularSpeed = leftX * maxAngularSpeed;
-            angularSpeed += (desiredAngularSpeed - angularSpeed) * angularSpeedGainDt; // TODO timestep independent gain?
+            float desiredAngularSpeed = leftX * maxAngularSpeed * speed;
+            float angularSpeedChange = (desiredAngularSpeed - angularSpeed) * angularSpeedGainDt;
+            float angularSpeedChange2 = Mathf.Sign(angularSpeedChange) * Mathf.Min(maxAngularAcceleration * speed * Time.deltaTime, Mathf.Abs(angularSpeedChange));
+            //UnityEngine.Debug.Log("sp " + angularSpeed + " gain " + angularSpeedGain + " left " + leftX + " des " + desiredAngularSpeed + " change " + angularSpeedChange + " 2 " + angularSpeedChange2);
+            angularSpeed += angularSpeedChange2; // TODO timestep independent gain?
 
             float deltaAngle = angularSpeed * Time.deltaTime;
             transform.rotation = Quaternion.AngleAxis(deltaAngle, up) * transform.rotation;
@@ -98,18 +103,24 @@ public class Runner : MonoBehaviour {
             animator.SetFloat("RunSpeed", speed);
 
             // Have the camera follow the player
-            float cameraOffsetScale = 1.0f + (speed - 1.0f) * 0.5f;
+            float cameraOffsetScale = 1.0f;// + (speed - 1.0f) * 0.5f;
             targetCameraPositionWs = transform.TransformPoint(targetCameraOffsetLs * cameraOffsetScale);
             targetCameraRotationWs = transform.rotation;
+
+            Vector3 forward = targetCameraRotationWs * new Vector3(0, 0, 1);
+            Quaternion tilt = Quaternion.AngleAxis(-angularSpeed * 0.1f, forward);
+            targetCameraRotationWs = tilt * targetCameraRotationWs;
 
             lastPosition = transform.position;
         }
 
         // Update the camera
         const float cameraGain = 10.0f;
+        const float cameraAngularGain = 4.0f;
         float cameraGainDt = Mathf.Min(1.0f, cameraGain * Time.deltaTime);
+        float cameraAngularGainDt = Mathf.Min(1.0f, cameraAngularGain * Time.deltaTime);
         Camera camera = Camera.main;
         camera.transform.position += (targetCameraPositionWs - camera.transform.position) * cameraGainDt;
-        camera.transform.rotation = Quaternion.Slerp(camera.transform.rotation, targetCameraRotationWs, cameraGainDt);
+        camera.transform.rotation = Quaternion.Slerp(camera.transform.rotation, targetCameraRotationWs, cameraAngularGainDt);
     }
 }

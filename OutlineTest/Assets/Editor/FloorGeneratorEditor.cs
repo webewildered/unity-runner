@@ -10,9 +10,24 @@ public class FloorGeneratorEditor : Editor
         base.OnInspectorGUI();
 
         FloorGenerator floorGenerator = (FloorGenerator)target;
-        if (GUILayout.Button("Build Mesh"))
+        if (GUILayout.Button("Build Curve"))
         {
             floorGenerator.Rebuild();
+        }
+
+        if (GUILayout.Button("Build Wave"))
+        {
+            floorGenerator.RebuildWave();
+        }
+
+        if (GUILayout.Button("Build Open"))
+        {
+            floorGenerator.RebuildOpen();
+        }
+
+        if (GUILayout.Button("Build Field"))
+        {
+            floorGenerator.RebuildField();
         }
     }
 }

@@ -15,6 +15,7 @@
 		Pass
 		{
 			CGPROGRAM
+			#pragma enable_d3d11_debug_symbols
 			#pragma vertex vert
 			#pragma fragment frag
 			
@@ -50,8 +51,9 @@
 
 			float depthDiff(float depthA, float3 normalA, float depthB, float3 normalB)
 			{
-				const float nFactor = 100.0f;
-				return abs(depthA - DECODE_EYEDEPTH(depthB)) * (nFactor + 1.0f - nFactor * dot(normalA, normalB));
+				const float normalWeight = 10.0f;
+				float normalFactor = normalWeight + 1.0f - normalWeight * dot( normalA, normalB );
+				return (abs(DECODE_EYEDEPTH( depthB )) - depthA) * normalFactor;
 			}
 
 			fixed4 frag (v2f i) : SV_Target
@@ -59,11 +61,13 @@
 				fixed4 col = tex2D(_MainTex, i.uv);
 
 				// TODO - need DECODE_EYEDEPTH?
+				// Note - need to abs(DECODE_EYEDEPTH) because unset pixels will have raw depth value >1, DECODE_EYEDEPTH
+				// basically returns 1 / (1 - rawDepth) so they will get a huge negative value when we really want a huge positive value
 				// Depth/normal sample at pixel
 				float rawDepth; 
 				float3 normal;
 				DecodeDepthNormal(tex2D(_CameraDepthNormalsTexture, i.uv), rawDepth, normal);
-				float depth = DECODE_EYEDEPTH(rawDepth);
+				float depth = abs(DECODE_EYEDEPTH(rawDepth));
 
 				float dLeft, dRight, dUp, dDown;
 				float3 nLeft, nRight, nUp, nDown;
@@ -72,24 +76,9 @@
 				DecodeDepthNormal(tex2D(_CameraDepthNormalsTexture, i.uv - float2(0, _InvScreenHeight)), dUp, nUp);
 				DecodeDepthNormal(tex2D(_CameraDepthNormalsTexture, i.uv + float2(0, _InvScreenHeight)), dDown, nDown);
 
-				// Distinguish background (cleared maxdepth) pixels from foreground (character) pixels.
-				// This is to avoid 1) drawing outlines on background pixels and 2) double-outlining edges
-				// TODO - stencil to distinguish outlined objects from everything else?
-				float foreground = ceil(1.0 - rawDepth);
-				float backgroundRight = floor(dRight);
-				float backgroundDown = floor(dDown);
-
-				float dMax = foreground * max(
-					max(depthDiff(depth, normal, dLeft, nLeft), backgroundRight * depthDiff(depth, normal, dRight, nRight)), 
-					max(depthDiff(depth, normal, dUp, nUp), backgroundDown * depthDiff(depth, normal, dDown, nDown)));
-
-				//Depth-only
-				//float d = DECODE_EYEDEPTH(tex2D(_LastCameraDepthTexture, i.uv));
-				//float dLeft = DECODE_EYEDEPTH(tex2D(_LastCameraDepthTexture, i.uv - float2(_InvScreenWidth, 0))) - d;
-				//float dRight = DECODE_EYEDEPTH(tex2D(_LastCameraDepthTexture, i.uv + float2(_InvScreenWidth, 0))) - d;
-				//float dUp = DECODE_EYEDEPTH(tex2D(_LastCameraDepthTexture, i.uv - float2(0, _InvScreenHeight))) - d;
-				//float dDown = DECODE_EYEDEPTH(tex2D(_LastCameraDepthTexture, i.uv + float2(0, _InvScreenHeight))) - d;
-				//float dMax = max(max(abs(dLeft), abs(dRight)), max(abs(dUp), abs(dDown)));
+				float dMax = max(
+					max(depthDiff(depth, normal, dLeft, nLeft), depthDiff(depth, normal, dRight, nRight)), 
+					max(depthDiff(depth, normal, dUp, nUp), depthDiff(depth, normal, dDown, nDown)));
 
 				const float threshold = 0.001f;
 				const float darken = 0.3f;
