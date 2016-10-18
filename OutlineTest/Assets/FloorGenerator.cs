@@ -396,7 +396,7 @@ public class FloorGenerator : MonoBehaviour
         {
             Block block = new Block();
             block.Start = rng.Range(0, numSteps) * Res;
-            block.Duration = rng.Range(0, 2) * Res;
+            block.Duration = rng.Range(1, 3) * Res;
             block.Height = rng.Range(1.0f, 5.0f);
             block.Left = rng.Range(0.0f, 0.9f);
             block.Right = Mathf.Min(block.Left + rng.Range(0.1f, 0.2f), 1.0f);

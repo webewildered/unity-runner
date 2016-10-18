@@ -66,6 +66,11 @@ ModelImporter:
     7400008: Idle
     7400010: StartWalking
     7400012: Run
+    7400014: JumpLeft
+    7400016: JumpRight
+    7400018: GlideLeft
+    7400020: GlideRight
+    7400022: Land
     9500000: //RootNode
     13700000: Plane
   materials:
@@ -75,7 +80,7 @@ ModelImporter:
   animations:
     legacyGenerateAnimations: 4
     bakeSimulation: 0
-    resampleRotations: 1
+    resampleCurves: 1
     optimizeGameObjects: 0
     motionNodeName: Armature/Root
     animationImportErrors: 
@@ -317,6 +322,366 @@ ModelImporter:
       loop: 0
       hasAdditiveReferencePose: 0
       loopTime: 1
+      loopBlend: 0
+      loopBlendOrientation: 0
+      loopBlendPositionY: 0
+      loopBlendPositionXZ: 0
+      keepOriginalOrientation: 0
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 0
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask:
+      - path: 
+        weight: 1
+      - path: Armature
+        weight: 1
+      - path: Armature/Root
+        weight: 1
+      - path: Armature/Root/Stomach
+        weight: 1
+      - path: Armature/Root/Stomach/Chest
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L/Arm3_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L/Arm3_L/Arm4_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R/Arm3_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R/Arm3_R/Arm4_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Head
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_L
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_L/Calf_L
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_R
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_R/Calf_R
+        weight: 1
+      - path: Ctrl_HandOrientation
+        weight: 1
+      - path: Ctrl_Root
+        weight: 1
+      - path: Ctrl_ShoulderOrientation
+        weight: 1
+      - path: Plane
+        weight: 1
+      maskType: 0
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
+      name: JumpLeft
+      takeName: JumpLeft
+      firstFrame: 0
+      lastFrame: 8
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 0
+      loopBlend: 0
+      loopBlendOrientation: 0
+      loopBlendPositionY: 0
+      loopBlendPositionXZ: 0
+      keepOriginalOrientation: 0
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 0
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask:
+      - path: 
+        weight: 1
+      - path: Armature
+        weight: 1
+      - path: Armature/Root
+        weight: 1
+      - path: Armature/Root/Stomach
+        weight: 1
+      - path: Armature/Root/Stomach/Chest
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L/Arm3_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L/Arm3_L/Arm4_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R/Arm3_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R/Arm3_R/Arm4_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Head
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_L
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_L/Calf_L
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_R
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_R/Calf_R
+        weight: 1
+      - path: Ctrl_HandOrientation
+        weight: 1
+      - path: Ctrl_Root
+        weight: 1
+      - path: Ctrl_ShoulderOrientation
+        weight: 1
+      - path: Plane
+        weight: 1
+      maskType: 0
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
+      name: JumpRight
+      takeName: JumpRight
+      firstFrame: 0
+      lastFrame: 8
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 0
+      loopBlend: 0
+      loopBlendOrientation: 0
+      loopBlendPositionY: 0
+      loopBlendPositionXZ: 0
+      keepOriginalOrientation: 0
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 0
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask:
+      - path: 
+        weight: 1
+      - path: Armature
+        weight: 1
+      - path: Armature/Root
+        weight: 1
+      - path: Armature/Root/Stomach
+        weight: 1
+      - path: Armature/Root/Stomach/Chest
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L/Arm3_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L/Arm3_L/Arm4_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R/Arm3_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R/Arm3_R/Arm4_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Head
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_L
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_L/Calf_L
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_R
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_R/Calf_R
+        weight: 1
+      - path: Ctrl_HandOrientation
+        weight: 1
+      - path: Ctrl_Root
+        weight: 1
+      - path: Ctrl_ShoulderOrientation
+        weight: 1
+      - path: Plane
+        weight: 1
+      maskType: 0
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
+      name: GlideLeft
+      takeName: GlideLeft
+      firstFrame: 0
+      lastFrame: 8
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 0
+      loopBlend: 0
+      loopBlendOrientation: 0
+      loopBlendPositionY: 0
+      loopBlendPositionXZ: 0
+      keepOriginalOrientation: 0
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 0
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask:
+      - path: 
+        weight: 1
+      - path: Armature
+        weight: 1
+      - path: Armature/Root
+        weight: 1
+      - path: Armature/Root/Stomach
+        weight: 1
+      - path: Armature/Root/Stomach/Chest
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L/Arm3_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L/Arm3_L/Arm4_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R/Arm3_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R/Arm3_R/Arm4_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Head
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_L
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_L/Calf_L
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_R
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_R/Calf_R
+        weight: 1
+      - path: Ctrl_HandOrientation
+        weight: 1
+      - path: Ctrl_Root
+        weight: 1
+      - path: Ctrl_ShoulderOrientation
+        weight: 1
+      - path: Plane
+        weight: 1
+      maskType: 0
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
+      name: GlideRight
+      takeName: GlideRight
+      firstFrame: 0
+      lastFrame: 8
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 0
+      loopBlend: 0
+      loopBlendOrientation: 0
+      loopBlendPositionY: 0
+      loopBlendPositionXZ: 0
+      keepOriginalOrientation: 0
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 0
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask:
+      - path: 
+        weight: 1
+      - path: Armature
+        weight: 1
+      - path: Armature/Root
+        weight: 1
+      - path: Armature/Root/Stomach
+        weight: 1
+      - path: Armature/Root/Stomach/Chest
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L/Arm3_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_L/Arm2_L/Arm3_L/Arm4_L
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R/Arm3_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Arm1_R/Arm2_R/Arm3_R/Arm4_R
+        weight: 1
+      - path: Armature/Root/Stomach/Chest/Head
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_L
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_L/Calf_L
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_R
+        weight: 1
+      - path: Armature/Root/Stomach/Thigh_R/Calf_R
+        weight: 1
+      - path: Ctrl_HandOrientation
+        weight: 1
+      - path: Ctrl_Root
+        weight: 1
+      - path: Ctrl_ShoulderOrientation
+        weight: 1
+      - path: Plane
+        weight: 1
+      maskType: 0
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
+      name: Land
+      takeName: Land
+      firstFrame: 0
+      lastFrame: 22
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 0
       loopBlend: 0
       loopBlendOrientation: 0
       loopBlendPositionY: 0
