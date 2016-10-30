@@ -61,7 +61,7 @@
 				fixed4 col = tex2D(_MainTex, i.uv);
 
 				// TODO - need DECODE_EYEDEPTH?
-				// Note - need to abs(DECODE_EYEDEPTH) because unset pixels will have raw depth value >1, DECODE_EYEDEPTH
+				// Note - need to abs(DECODE_EYEDEPTH) because unset pixels will have raw depth value slightly >1, DECODE_EYEDEPTH
 				// basically returns 1 / (1 - rawDepth) so they will get a huge negative value when we really want a huge positive value
 				// Depth/normal sample at pixel
 				float rawDepth; 
