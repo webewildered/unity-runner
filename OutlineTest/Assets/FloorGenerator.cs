@@ -5,11 +5,25 @@ using System.Collections.Generic;
 
 public class FloorGenerator : MonoBehaviour
 {
+    const float baseWidth = 40.0f;
+    const float minWidth = 10.0f;
+
     public float Res = 0.5f;
     public float MaxSpeed = 10.0f;
     public float PeriodScale = 0.01f;
+    public Material MeshMaterial;
 
     Vector3 up = new Vector3(0f, 1f, 0f);
+    Rng rng;
+
+    // Curve state
+    Vector3 center = Vector3.zero;
+    Vector3 lastCenter = Vector3.zero;
+    Vector3 lastArm = Vector3.zero;
+    float t = 0.0f;
+    float angle = 0.0f;
+    float lastWidth = baseWidth;
+    float widthV = 0.0f;
 
     struct Block : IComparable<Block>
     {
@@ -88,19 +102,118 @@ public class FloorGenerator : MonoBehaviour
         }
     }
 
-    class StraightCurve : Curve
+    class ConstantCurve : Curve
     {
+        float deltaAngle;
         float width;
 
-        public StraightCurve(float width)
+        public ConstantCurve(float deltaAngle, float width)
         {
+            this.deltaAngle = deltaAngle;
             this.width = width;
         }
 
         public override void Sample(float t, out float deltaAngle, out float width)
         {
+            deltaAngle = this.deltaAngle;
+            width = this.width;
+        }
+    }
+
+    class SinCurve : Curve
+    {
+        float start;
+        float invPeriod;
+        float magnitude;
+        float width;
+
+        public SinCurve(float start, float length, float magnitude, float width)
+        {
+            this.start = start;
+            invPeriod = Mathf.PI * 2.0f / length;
+            this.magnitude = magnitude;
+            this.width = width;
+        }
+
+        public override void Sample(float t, out float deltaAngle, out float width)
+        {
+            t -= start;
+            deltaAngle = Mathf.Sin(t * invPeriod) * magnitude;
+            width = this.width;
+        }
+    }
+
+    class ZigZagCurve : Curve
+    {
+        struct Turn
+        {
+            public float Time;
+            public float Duration;
+            public float Direction;
+
+            public Turn(float time, float duration, float direction)
+            {
+                Time = time;
+                Duration = duration;
+                Direction = direction;
+            }
+        }
+
+        List<Turn> turns;
+        float res;
+        float start;
+        float maxAngle;
+        float width;
+        int lastTurnIndex;
+
+        public ZigZagCurve(float start, float length, int approxCount, float res, float width, Rng rng)
+        {
+            this.start = start;
+            this.res = res;
+            this.width = width;
+
+            maxAngle = 0.9f * Mathf.Asin(2 * res / width); // TODO - maybe could have problems when another curve varies the width
+
+            lastTurnIndex = 0;
+
+            turns = new List<Turn>();
+            float t = 0;
+            float averageDistance = length / approxCount;
+            while (t < length)
+            {
+                float distance = rng.Range(averageDistance * 0.5f, averageDistance * 1.5f);
+                float duration = rng.Range(res * 5, res * 15);
+                t += distance;
+                Turn turn = new Turn(t, duration, rng.PlusOrMinusOne());
+                t += duration;
+                turns.Add(turn);
+            }
+        }
+
+        public override void Sample(float t, out float deltaAngle, out float width)
+        {
+            t -= start;
             deltaAngle = 0.0f;
             width = this.width;
+
+            if (turns[lastTurnIndex].Time > t)
+            {
+                lastTurnIndex = 0;
+            }
+
+            while (turns[lastTurnIndex].Time < t)
+            {
+                if (lastTurnIndex == turns.Count - 1)
+                {
+                    return;
+                }
+                lastTurnIndex++;
+            }
+
+            if (turns[lastTurnIndex].Time < t + res + turns[lastTurnIndex].Duration)
+            {
+                deltaAngle = maxAngle * turns[lastTurnIndex].Direction;
+            }
         }
     }
 
@@ -224,11 +337,11 @@ public class FloorGenerator : MonoBehaviour
         // Build a random mesh
         //Random.InitState((int)System.DateTime.Now.Ticks);
 
-        Vector3 center = Vector3.zero;
-        Vector3 lastCenter = Vector3.zero;
-        Vector3 lastArm = Vector3.zero;
-        float t = 0.0f;
-        float angle = 0.0f;
+        // Add vertices connecting to the previous section
+        vertices.Add(lastCenter - lastArm);
+        vertices.Add(lastCenter + lastArm);
+        normals.Add(up);
+        normals.Add(up);
 
         int numSteps = (int)(length / Res) + 1;
         int vertexIndex = vertices.Count;
@@ -241,6 +354,14 @@ public class FloorGenerator : MonoBehaviour
             curve.Sample(t, out deltaAngle, out width);
             angle += deltaAngle * Res;
 
+            // Apply width gain
+            // basically a spring, works well enough
+            const float widthGain = 0.2f;
+            float targetWidthV = (width - lastWidth) * widthGain;
+            widthV = targetWidthV * widthGain + widthV * (1.0f - widthGain);
+            width = lastWidth + widthV;
+            lastWidth = width;
+
             // Add vertices at the current position
             float cosAngle = Mathf.Cos(angle);
             float sinAngle = Mathf.Sin(angle);
@@ -251,15 +372,12 @@ public class FloorGenerator : MonoBehaviour
             normals.Add(up);
 
             // Add triangles
-            if (i > 0)
-            {
-                triangles.Add(vertexIndex);
-                triangles.Add(lastFloorVertexIndex + 1);
-                triangles.Add(lastFloorVertexIndex);
-                triangles.Add(lastFloorVertexIndex + 1);
-                triangles.Add(vertexIndex);
-                triangles.Add(vertexIndex + 1);
-            }
+            triangles.Add(vertexIndex);
+            triangles.Add(lastFloorVertexIndex + 1);
+            triangles.Add(lastFloorVertexIndex);
+            triangles.Add(lastFloorVertexIndex + 1);
+            triangles.Add(vertexIndex);
+            triangles.Add(vertexIndex + 1);
             lastFloorVertexIndex = vertexIndex;
             vertexIndex += 2;
 
@@ -274,7 +392,7 @@ public class FloorGenerator : MonoBehaviour
                     minBlockIndex = Math.Min(minBlockIndex, blockIndex);
                     break;
                 }
-                if (block.Start + block.Duration < t)
+                if (block.Start + block.Duration + Res < t)
                 {
                     blockIndex++;
                     continue;
@@ -310,16 +428,7 @@ public class FloorGenerator : MonoBehaviour
         }
     }
 
-    void buildCurve(Curve curve, float length)
-    {
-        List<Vector3> vertices = new List<Vector3>();
-        List<Vector3> normals = new List<Vector3>();
-        List<int> triangles = new List<int>();
-        appendCurve(curve, length, ref vertices, ref normals, ref triangles);
-        setMesh(vertices.ToArray(), normals.ToArray(), triangles.ToArray());
-    }
-
-    void clear()
+    public void Clear()
     {
         IEnumerator childEnumerator = transform.GetEnumerator();
         while (true)
@@ -332,97 +441,371 @@ public class FloorGenerator : MonoBehaviour
             GameObject.DestroyImmediate(child.gameObject);
             childEnumerator.Reset();
         }
+
+        center = Vector3.zero;
+        lastCenter = Vector3.zero;
+        lastArm = Vector3.zero;
+        t = 0.0f;
+        angle = 0.0f;
     }
 
-	public void Rebuild ()
+    enum ChallengeType
     {
-        clear();
+        Prefab,
+        Random,
+        Size,
+        Curve,
+        Width,
+        Count
+    };
 
-        buildCurve(new WiggleCurve(5.0f), 1000.0f);
+    enum PrefabType
+    {
+        Strait,
+        Jig1,
+        Random,
+        Divide,
+        Wall,
+        Divide2,
+        Divide3,
+        Count
+    };
+
+    enum CurveType
+    {
+        Constant,
+        Wave,
+        ZigZag,
+        DoubleWave,
+        Count
     }
 
-    public void RebuildWave()
+    FloorGenerator()
     {
-        clear();
-
-        MultiCurve.Piece[] pieces = new MultiCurve.Piece[2];
-        pieces[0].Curve = new StraightCurve(5.0f);
-        pieces[0].Duration = 10.0f;
-        pieces[1].Curve = new WaveCurve(5.0f);
-        pieces[1].Duration = 10000.0f;
-        buildCurve(new MultiCurve(pieces), 1000.0f);
+        resetSeed(1234567890);
     }
 
-    public void RebuildOpen()
+    void resetSeed(int seed)
     {
-        clear();
-
-        const float halfSize = 500.0f;
-
-        List<Vector3> vertices = new List<Vector3>();
-        List<Vector3> normals = new List<Vector3>();
-        List<int> triangles = new List<int>();
-        appendPlane(halfSize, ref vertices, ref normals, ref triangles);
-
-        setMesh(vertices.ToArray(), normals.ToArray(), triangles.ToArray());
+        rng = new Rng(seed);
     }
 
-    public void RebuildField()
+    public void Reset(int seed)
     {
-        clear();
+        resetSeed(seed);
+        Clear();
+    }
+    
+    float challengeValue(float min, float max, int challenge)
+    {
+        return (max + (min - max) / Mathf.Sqrt((float)challenge + 1.0f));
+    }
 
-        List<Vector3> vertices = new List<Vector3>();
-        List<Vector3> normals = new List<Vector3>();
-        List<int> triangles = new List<int>();
+    void fill(Curve curve, float start, float end, float left, float right, int challenge, int sizeChallenge)
+    {
+        int numBlocks = curve.Blocks.Count;
+        float area = (end - start) * (right - left);
+        float targetArea = challengeValue(0.01f, 0.05f, challenge) * area; // Area to fill with obstacles
 
-        const float halfWidth = 10.0f;
-        const float length = 1000.0f;
-        Curve curve = new StraightCurve(2.0f * halfWidth);
+        float areaWidth = right - left;
+        float areaDepth = end - start;
 
-        /*
-        Block block = new Block();
-        block.Start = 1.0f;
-        block.Duration = 1.0f;
-        block.Height = 1.0f;
-        block.Left = 0.25f;
-        block.Right = 0.75f;
-        curve.Blocks.Add(block);
-        */
+        int sizeX = Mathf.RoundToInt(areaWidth / 0.05f);
+        int sizeZ = Mathf.RoundToInt(areaDepth / 1.0f);
+        float resX = areaWidth / sizeX;
+        float resZ = areaDepth / sizeZ;
 
-        // Add some obstacles
-        Rng rng = new Rng(123456);
-        int numSteps = (int)(length / Res);
-        for (int i = 0; i < 100; i++)
+        const int maxIterations = 1000;
+        int itr = 0;
+        while (targetArea > 0.0f)
+        {
+            if (itr > maxIterations)
+            {
+                // Something went wrong or we got incredibly unlucky, don't loop forever
+                break;
+            }
+            itr++;
+
+            // Choose random block dimensions and placement
+            int blockWidthInt = Mathf.RoundToInt(rng.Range(resX, challengeValue(resX, 0.2f, sizeChallenge)) / resX);
+            int blockDepthInt = Mathf.RoundToInt(rng.Range(resZ, challengeValue(resZ, 3.0f, sizeChallenge)) / resZ);
+            int blockLeftInt = rng.Range(0, sizeX - blockWidthInt + 1);
+            int blockStartInt = rng.Range(0, sizeZ - blockDepthInt + 1);
+
+            float blockLeft = left + blockLeftInt * resX;
+            float blockRight = blockLeft + blockWidthInt * resX;
+            float blockStart = start + blockStartInt * resZ;
+            float blockEnd = blockStart + blockDepthInt * resZ;
+
+            // See if it overlaps another block in this fill area.  Assuming no other blocks
+            // are placed in the fill area.
+            bool overlap = false;
+            for (int i = numBlocks; i < curve.Blocks.Count; i++)
+            {
+                Block block = curve.Blocks[i];
+                if (block.Left < blockRight &&
+                    block.Right > blockLeft &&
+                    block.Start < blockEnd &&
+                    block.Start + block.Duration > blockStart)
+                {
+                    overlap = true;
+                    break;
+                }
+            }
+
+            if (overlap)
+            {
+                // Just try again
+                continue;
+            }
+
+            // Create the block
+            {
+                Block block = new Block();
+                block.Left = blockLeft;
+                block.Right = blockRight;
+                block.Start = blockStart;
+                block.Duration = blockEnd - blockStart;
+                block.Height = rng.Range(1.0f, challengeValue(1.5f, 3.0f, sizeChallenge));
+                curve.Blocks.Add(block);
+            }
+
+            targetArea -= (blockRight - blockLeft) * (blockEnd - blockStart);
+        }
+    }
+
+    void divide(Curve curve, int n, float width, float duration, float prefabStart, float heightScale, int randomChallenge, int sizeChallenge)
+    {
+        float depth = 4.0f;
+        float start = prefabStart + (duration - depth) / 2.0f;
+        float space = (1.0f - n * width) / (n + 1.0f);
+
+        for (int i = 0; i < n; i++)
         {
             Block block = new Block();
-            block.Start = rng.Range(0, numSteps) * Res;
-            block.Duration = rng.Range(1, 3) * Res;
-            block.Height = rng.Range(1.0f, 5.0f);
-            block.Left = rng.Range(0.0f, 0.9f);
-            block.Right = Mathf.Min(block.Left + rng.Range(0.1f, 0.2f), 1.0f);
+            block.Start = start;
+            block.Duration = depth;
+            block.Height = 5.0f * heightScale;
+            block.Left = space * (i + 1.0f) + width * (float)i;
+            block.Right = block.Left + width;
             curve.Blocks.Add(block);
         }
-        finalizeCurve(curve);
 
-        appendCurve(curve, length, ref vertices, ref normals, ref triangles);
-        setMesh(vertices.ToArray(), normals.ToArray(), triangles.ToArray());
-
-        // Add some obstacles
-        /*
-        GameObject boxPrefab = Resources.Load<GameObject>("Obstacles/BoxPrefab");
-        Rng rng = new Rng(123456);
-        for (int i = 0; i < 200; i++)
+        int divideBlockCount = curve.Blocks.Count;
+        float offset = (duration - depth) * 0.2f; // leave some open space between the dividers
+        for (int i = 0; i <= n; i++)
         {
-            //spawn object
-            GameObject box = Instantiate<GameObject>(boxPrefab);
-            box.transform.parent = transform;
-            box.transform.position = new Vector3(rng.Range(-halfWidth, halfWidth), 0.0f, rng.Range(20.0f, length));
-            box.transform.localScale = new Vector3(1.0f, rng.Range(1.0f, 10.0f), 1.0f);
+            float left = (i == 0) ? 0.0f : curve.Blocks[divideBlockCount - (n - i) - 1].Right;
+            float right = (i == n) ? 1.0f : curve.Blocks[divideBlockCount - (n - i)].Left;
+            fill(curve, prefabStart, prefabStart + (duration - depth) / 2.0f - offset, left, right, randomChallenge, sizeChallenge);
+            fill(curve, prefabStart + (duration + depth) / 2.0f + offset, prefabStart + duration, left, right, randomChallenge, sizeChallenge);
         }
-        */
     }
 
-    void setMesh(Vector3[] vertices, Vector3[] normals, int[] triangles)
+    public void Append(int challenge)
+    {
+        int[] challenges = new int[(int)ChallengeType.Count];
+        for (int i = 0; i < challenge; i++)
+        {
+            challenges[rng.Range(0, (int)ChallengeType.Count)]++;
+        }
+
+        float length = 500.0f;
+
+        // Build the curve
+        int curveChallenge = challenges[(int)ChallengeType.Curve];
+        int widthChallenge = challenges[(int)ChallengeType.Width];
+        int curveIntensity = 0;
+        if (curveChallenge > 0)
+        {
+            curveIntensity = rng.Range(1, curveChallenge + 1);
+            curveChallenge -= curveIntensity;
+        }
+        float curveWidth = challengeValue(baseWidth, minWidth, widthChallenge);
+
+        Curve curve;
+        float direction = rng.PlusOrMinusOne();
+        CurveType curveType = (CurveType)curveChallenge;
+        switch (curveType)
+        {
+            case CurveType.Constant:
+            {
+                float curveRate = challengeValue(0.0f, 0.0025f, curveIntensity);
+                curve = new ConstantCurve(curveRate * direction, curveWidth);
+                break;
+            }
+
+            case CurveType.Wave:
+            case CurveType.DoubleWave:
+            {
+                float l = length;
+                if (curveType == CurveType.DoubleWave)
+                {
+                    l *= 0.5f;
+                }
+
+                float curveRate = challengeValue(0.002f, 0.005f, curveIntensity);
+                curve = new SinCurve(t, l, curveRate * direction, curveWidth);
+                break;
+            }
+
+            case CurveType.ZigZag:
+            {
+                curve = new ZigZagCurve(t, length, Math.Min(10, curveIntensity), Res, curveWidth, rng);
+                break;
+            }
+
+            default:
+            {
+                // Something went wrong
+                Debug.Assert(false);
+                curve = new ConstantCurve(0.0f, curveWidth);
+                break;
+            }
+        }
+
+        // Add prefabricated obstacles
+        int randomChallenge = challenges[(int)ChallengeType.Random];
+        int prefabChallenge = challenges[(int)ChallengeType.Prefab];
+        int sizeChallenge = challenges[(int)ChallengeType.Size];
+        const float margin = 5.0f;
+        float prefabStart = t + margin;
+        float prefabEnd = t + length - margin;
+        while (prefabStart < prefabEnd)
+        {
+            int maxType = Math.Min((int)PrefabType.Divide + prefabChallenge, (int)PrefabType.Count);
+            PrefabType type = (PrefabType)rng.Range(0, maxType);
+            //type = PrefabType.Divide3; // TEST
+            float heightScale = challengeValue(1.0f, 4.0f, sizeChallenge);
+            switch (type)
+            {
+                case PrefabType.Strait:
+                {
+                    float width = challengeValue(0.15f, 0.3f, sizeChallenge);
+                    float duration = 25.0f; // depth = duration
+                    for (int i = 0; i < 2; i++)
+                    {
+                        Block block = new Block();
+                        block.Start = prefabStart;
+                        block.Duration = duration;
+                        block.Height = 2.0f * heightScale;
+                        block.Left = (i == 0) ? 0.0f : (1.0f - width);
+                        block.Right = (i == 0) ? width : 1.0f;
+                        curve.Blocks.Add(block);
+                    }
+
+                    fill(curve, prefabStart, prefabStart + duration, width, 1.0f - width, randomChallenge, sizeChallenge);
+
+                    prefabStart += duration;
+                    break;
+                }
+
+                case PrefabType.Jig1:
+                {
+                    float width = challengeValue(0.4f, 0.6f, sizeChallenge);
+                    float duration = 25.0f;
+                    float depth = 15.0f;
+                    int side = rng.Range(0, 2);
+
+                    Block block = new Block();
+                    block.Start = prefabStart + (duration - depth) / 2.0f;
+                    block.Duration = depth;
+                    block.Height = 2.0f * heightScale;
+                    block.Left = (0 == side) ? 0.0f : (1.0f - width);
+                    block.Right = (0 == side) ? width : 1.0f;
+                    curve.Blocks.Add(block);
+
+                    fill(curve, prefabStart, block.Duration, (0 == side) ? block.Right : 0.0f, (0 == side) ? 1.0f : block.Left, randomChallenge, sizeChallenge);
+                    fill(curve, block.Start, block.Duration - block.Start, 0.0f, 1.0f, randomChallenge, sizeChallenge);
+                    fill(curve, block.Start + block.Duration, prefabStart + duration, 0.0f, 1.0f, randomChallenge, sizeChallenge);
+
+                    prefabStart += duration;
+                    break;
+                }
+
+                case PrefabType.Divide:
+                {
+                    float width = 0.3f;
+                    float duration = 15.0f;
+                    divide(curve, 1, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
+                    prefabStart += duration;
+                    break;
+                }
+
+                case PrefabType.Random:
+                {
+                    float duration = 25.0f;
+                    fill(curve, prefabStart, prefabStart + duration, 0.0f, 1.0f, randomChallenge + 1, sizeChallenge);
+                    prefabStart += duration;
+                    break;
+                }
+
+                case PrefabType.Wall:
+                {
+                    float duration = 25.0f;
+                    float depth = 15.0f;
+                    float width = challengeValue(0.1f, 0.3f, sizeChallenge);
+
+                    Block block = new Block();
+                    block.Start = prefabStart + (duration - depth) / 2.0f;
+                    block.Duration = depth;
+                    block.Height = 2.0f * heightScale;
+                    block.Left = (1.0f - width) / 2.0f;
+                    block.Right = (1.0f + width) / 2.0f;
+                    curve.Blocks.Add(block);
+
+                    fill(curve, prefabStart, prefabStart + duration, 0.0f, block.Left, randomChallenge, sizeChallenge);
+                    fill(curve, prefabStart, prefabStart + duration, block.Right, 1.0f, randomChallenge, sizeChallenge);
+
+                    prefabStart += duration;
+                    break;
+                }
+
+                case PrefabType.Divide2:
+                {
+                    float width = 0.2f;
+                    float duration = 15.0f;
+                    divide(curve, 2, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
+                    prefabStart += duration;
+                    break;
+                }
+
+                case PrefabType.Divide3:
+                {
+                    float width = 0.1f;
+                    float duration = 15.0f;
+                    divide(curve, 3, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
+                    prefabStart += duration;
+                    break;
+                }
+
+                default: break;
+            }
+
+            // Add space between prefabs
+            float prefabSpace = challengeValue(25.0f, 5.0f, prefabChallenge);
+            fill(curve, prefabStart, prefabStart + prefabSpace, 0.0f, 1.0f, randomChallenge, sizeChallenge);
+            prefabStart += prefabSpace;
+        }
+
+        // Build the section mesh
+        List<Vector3> vertices = new List<Vector3>();
+        List<Vector3> normals = new List<Vector3>();
+        List<int> triangles = new List<int>();
+        finalizeCurve(curve);
+        appendCurve(curve, length, ref vertices, ref normals, ref triangles);
+
+        // Create an game object to hold the new section
+        GameObject section = new GameObject();
+        section.transform.parent = transform;
+        section.AddComponent<MeshFilter>();
+        section.AddComponent<MeshCollider>();
+        MeshRenderer renderer = section.AddComponent<MeshRenderer>();
+        setMesh(section, vertices.ToArray(), normals.ToArray(), triangles.ToArray());
+        renderer.material = MeshMaterial;
+    }
+
+    void setMesh(GameObject gameObject, Vector3[] vertices, Vector3[] normals, int[] triangles)
     {
         Mesh mesh = new Mesh();
 
@@ -430,13 +813,12 @@ public class FloorGenerator : MonoBehaviour
         mesh.triangles = triangles;
         mesh.normals = normals;
 
-        GetComponent<MeshFilter>().mesh = mesh;
-        GetComponent<MeshCollider>().sharedMesh = mesh;
+        gameObject.GetComponent<MeshFilter>().mesh = mesh;
+        gameObject.GetComponent<MeshCollider>().sharedMesh = mesh;
     }
 
     void Start()
     {
-
     }
 
     void Update ()

@@ -82,18 +82,6 @@ public class Runner : MonoBehaviour
 
         if (state == State.Dead)
         {
-            DeathCamera.enabled = false;
-            DeathSnapshot snapshot = DeathCamera.GetComponent<DeathSnapshot>();
-            Rect source = new Rect(0, 0, snapshot.Texture.width / 2, snapshot.Texture.height / 2);
-            snapshot.Texture.ReadPixels(source, 0, 0);
-            Color[] colors = snapshot.Texture.GetPixels();
-            for (int i = 0; i < colors.Length; i++)
-            {
-                if (colors[i] != Color.white)
-                {
-                    
-                }
-            }
             GameObject.Destroy(gameObject);
             return;
         }
@@ -189,10 +177,6 @@ public class Runner : MonoBehaviour
                 float deltaAngle = angularSpeed * Time.deltaTime;
                 rotationUp = Quaternion.AngleAxis(deltaAngle, up) * rotationUp;
 
-                // Control the character's speed
-                speed += acceleration * Time.deltaTime;
-                animator.SetFloat("RunSpeed", speed);
-
                 // Move the character forward
                 characterForward = rotationUp * new Vector3(0, 0, 1);
                 float forwardSpeed = baseSpeed * speed;
@@ -220,8 +204,8 @@ public class Runner : MonoBehaviour
 
                 // Player can influence horizontal speed, but not turn
                 const float maxHorizontalSpeed = 20.0f;
-                const float horizontalSpeedGain = 30.0f;
-                const float maxHorizontalAcceleration = 30.0f;
+                const float horizontalSpeedGain = 20.0f;
+                const float maxHorizontalAcceleration = 20.0f;
 
                 characterForward = transform.rotation * new Vector3(0, 0, 1);
                 Vector3 right = Vector3.Cross(up, characterForward);
@@ -298,10 +282,11 @@ public class Runner : MonoBehaviour
         {
             // Transition to dead
             state = State.Dead;
-            DeathCamera.enabled = true;
+            DeathCamera.GetComponent<DeathSnapshot>().Snap(velocity);
         }
 
-        Vector3 end = sphereRay.origin + dir;
-        Debug.DrawLine(sphereRay.origin, end, Color.red);
+        // Accelerate
+        speed += acceleration * Time.deltaTime;
+        animator.SetFloat("RunSpeed", speed);
     }
 }
