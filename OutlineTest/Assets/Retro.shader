@@ -1,6 +1,4 @@
-﻿// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
-
-Shader "Unlit/Retro"
+﻿Shader "Unlit/Retro"
 {
 	Properties
 	{
@@ -8,6 +6,7 @@ Shader "Unlit/Retro"
 		_Color ("Color", Color) = (0.66, 0, 1, 1)
 		_ShadeDarkness ("ShadeDarkness", Float) = 0.3
 		_LightDirection ("LightDirection", Vector) = (0, 0, 0, 0)
+		_EdgePriority("EdgePriority", Float) = 0.0 // Used by Edge.shader
 	}
 	SubShader
 	{
@@ -21,8 +20,6 @@ Shader "Unlit/Retro"
 			CGPROGRAM
 			#pragma vertex vert
 			#pragma fragment frag
-			// make fog work
-			#pragma multi_compile_fog
 			
 			#include "UnityCG.cginc"
 
@@ -34,13 +31,10 @@ Shader "Unlit/Retro"
 			{
 				float4 vertex : POSITION;
 				float3 normal : NORMAL;
-				float2 uv : TEXCOORD0;
 			};
 
 			struct v2f
 			{
-				float2 uv : TEXCOORD0;
-				UNITY_FOG_COORDS(1)
 				float4 vertex : SV_POSITION;
 				float3 normal : NORMAL;
 			};
@@ -52,9 +46,7 @@ Shader "Unlit/Retro"
 			{
 				v2f o;
 				o.vertex = mul(UNITY_MATRIX_MVP, v.vertex);
-				o.uv = TRANSFORM_TEX(v.uv, _MainTex);
 				o.normal = mul(unity_ObjectToWorld, v.normal);
-				UNITY_TRANSFER_FOG(o,o.vertex);
 				return o;
 			}
 			

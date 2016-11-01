@@ -5,6 +5,8 @@ public class DoPost : MonoBehaviour
 {
 	private Material material;
     public Light shaderLight;
+
+    public GameObject EdgeCamera;
     
 	void Awake()
 	{
@@ -22,13 +24,7 @@ public class DoPost : MonoBehaviour
 	// Postprocess the image
 	void OnRenderImage (RenderTexture source, RenderTexture destination)
     {
-        Camera camera = gameObject.GetComponent<Camera>();
-        Vector3 lightForward = shaderLight.transform.forward.normalized;
-        Vector4 lightDirection = camera.worldToCameraMatrix * new Vector4(lightForward.x, lightForward.y, lightForward.z, 0.0f);
-
-        lightDirection.Normalize();
-        material.SetVector("_LightDirection", lightDirection);
-
+        material.SetTexture("_EdgeTexture", EdgeCamera.GetComponent<EdgeCamera>().Target);
         Graphics.Blit (source, destination, material);
 	}
 }

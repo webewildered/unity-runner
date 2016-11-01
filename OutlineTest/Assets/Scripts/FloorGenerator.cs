@@ -9,8 +9,7 @@ public class FloorGenerator : MonoBehaviour
     const float minWidth = 10.0f;
 
     public float Res = 0.5f;
-    public float MaxSpeed = 10.0f;
-    public float PeriodScale = 0.01f;
+    public bool BuildObstacles = true;
     public Material MeshMaterial;
 
     Vector3 up = new Vector3(0f, 1f, 0f);
@@ -214,53 +213,6 @@ public class FloorGenerator : MonoBehaviour
             {
                 deltaAngle = maxAngle * turns[lastTurnIndex].Direction;
             }
-        }
-    }
-
-    class WiggleCurve : Curve
-    {
-        float width;
-
-        public WiggleCurve(float width)
-        {
-            this.width = width;
-        }
-
-        public override void Sample(float t, out float deltaAngle, out float width)
-        {
-            // TODO: params
-            const float invPeriodA = 0.1f;//(2.0f + Random.value) * PeriodScale;
-            const float invPeriodB = 0.032f;//(1.0f + Random.value) * PeriodScale;
-            const float magnitudeA = 0.1f;//(2.0f + Random.value) * 0.05f;
-            const float magnitudeB = 0.05f;//(2.0f + Random.value) * 0.1f;
-
-            deltaAngle = (Mathf.Sin(t * invPeriodA) * magnitudeA + Mathf.Sin(t * invPeriodB) * magnitudeB);
-            width = this.width;
-        }
-    }
-
-    class WaveCurve : Curve
-    {
-        float width;
-
-        public WaveCurve(float width)
-        {
-            this.width = width;
-        }
-
-        public override void Sample(float t, out float deltaAngle, out float width)
-        {
-            // TODO: params
-            const float invPeriodA = 0.1f;//(2.0f + Random.value) * PeriodScale;
-            const float invPeriodB = 0.005f;//(1.0f + Random.value) * PeriodScale;
-            const float magnitudeA = 0.075f;//(2.0f + Random.value) * 0.05f;
-            const float magnitudeB = 0.25f;//(2.0f + Random.value) * 0.1f;
-            //const float magnitudeB = 0.05f;//(2.0f + Random.value) * 0.1f;
-
-            //return Mathf.Cos(t * invPeriodA) * (magnitudeA + (Mathf.Sin(t * invPeriodB) + 1.0f) * magnitudeB);
-            float invPeriodFactor = 1.0f - (1.0f - Mathf.Cos(t * invPeriodB)) * 0.5f * magnitudeB;
-            deltaAngle = Mathf.Cos(t * invPeriodA * invPeriodFactor) * magnitudeA;
-            width = this.width;
         }
     }
 
@@ -664,128 +616,131 @@ public class FloorGenerator : MonoBehaviour
             }
         }
 
-        // Add prefabricated obstacles
-        int randomChallenge = challenges[(int)ChallengeType.Random];
-        int prefabChallenge = challenges[(int)ChallengeType.Prefab];
-        int sizeChallenge = challenges[(int)ChallengeType.Size];
-        const float margin = 5.0f;
-        float prefabStart = t + margin;
-        float prefabEnd = t + length - margin;
-        while (prefabStart < prefabEnd)
+        if (BuildObstacles)
         {
-            int maxType = Math.Min((int)PrefabType.Divide + prefabChallenge, (int)PrefabType.Count);
-            PrefabType type = (PrefabType)rng.Range(0, maxType);
-            //type = PrefabType.Divide3; // TEST
-            float heightScale = challengeValue(1.0f, 4.0f, sizeChallenge);
-            switch (type)
+            // Add prefabricated obstacles
+            int randomChallenge = challenges[(int)ChallengeType.Random];
+            int prefabChallenge = challenges[(int)ChallengeType.Prefab];
+            int sizeChallenge = challenges[(int)ChallengeType.Size];
+            const float margin = 5.0f;
+            float prefabStart = t + margin;
+            float prefabEnd = t + length - margin;
+            while (prefabStart < prefabEnd)
             {
-                case PrefabType.Strait:
+                int maxType = Math.Min((int)PrefabType.Divide + prefabChallenge, (int)PrefabType.Count);
+                PrefabType type = (PrefabType)rng.Range(0, maxType);
+                //type = PrefabType.Divide3; // TEST
+                float heightScale = challengeValue(1.0f, 4.0f, sizeChallenge);
+                switch (type)
                 {
-                    float width = challengeValue(0.15f, 0.3f, sizeChallenge);
-                    float duration = 25.0f; // depth = duration
-                    for (int i = 0; i < 2; i++)
+                    case PrefabType.Strait:
                     {
-                        Block block = new Block();
-                        block.Start = prefabStart;
-                        block.Duration = duration;
-                        block.Height = 2.0f * heightScale;
-                        block.Left = (i == 0) ? 0.0f : (1.0f - width);
-                        block.Right = (i == 0) ? width : 1.0f;
-                        curve.Blocks.Add(block);
+                        float width = challengeValue(0.15f, 0.3f, sizeChallenge);
+                        float duration = 25.0f; // depth = duration
+                        for (int i = 0; i < 2; i++)
+                        {
+                            Block block = new Block();
+                            block.Start = prefabStart;
+                            block.Duration = duration;
+                            block.Height = 2.0f * heightScale;
+                            block.Left = (i == 0) ? 0.0f : (1.0f - width);
+                            block.Right = (i == 0) ? width : 1.0f;
+                            curve.Blocks.Add(block);
+                        }
+
+                        fill(curve, prefabStart, prefabStart + duration, width, 1.0f - width, randomChallenge, sizeChallenge);
+
+                        prefabStart += duration;
+                        break;
                     }
 
-                    fill(curve, prefabStart, prefabStart + duration, width, 1.0f - width, randomChallenge, sizeChallenge);
+                    case PrefabType.Jig1:
+                    {
+                        float width = challengeValue(0.4f, 0.6f, sizeChallenge);
+                        float duration = 25.0f;
+                        float depth = 15.0f;
+                        int side = rng.Range(0, 2);
 
-                    prefabStart += duration;
-                    break;
+                        Block block = new Block();
+                        block.Start = prefabStart + (duration - depth) / 2.0f;
+                        block.Duration = depth;
+                        block.Height = 2.0f * heightScale;
+                        block.Left = (0 == side) ? 0.0f : (1.0f - width);
+                        block.Right = (0 == side) ? width : 1.0f;
+                        curve.Blocks.Add(block);
+
+                        fill(curve, prefabStart, block.Duration, (0 == side) ? block.Right : 0.0f, (0 == side) ? 1.0f : block.Left, randomChallenge, sizeChallenge);
+                        fill(curve, block.Start, block.Duration - block.Start, 0.0f, 1.0f, randomChallenge, sizeChallenge);
+                        fill(curve, block.Start + block.Duration, prefabStart + duration, 0.0f, 1.0f, randomChallenge, sizeChallenge);
+
+                        prefabStart += duration;
+                        break;
+                    }
+
+                    case PrefabType.Divide:
+                    {
+                        float width = 0.3f;
+                        float duration = 15.0f;
+                        divide(curve, 1, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
+                        prefabStart += duration;
+                        break;
+                    }
+
+                    case PrefabType.Random:
+                    {
+                        float duration = 25.0f;
+                        fill(curve, prefabStart, prefabStart + duration, 0.0f, 1.0f, randomChallenge + 1, sizeChallenge);
+                        prefabStart += duration;
+                        break;
+                    }
+
+                    case PrefabType.Wall:
+                    {
+                        float duration = 25.0f;
+                        float depth = 15.0f;
+                        float width = challengeValue(0.1f, 0.3f, sizeChallenge);
+
+                        Block block = new Block();
+                        block.Start = prefabStart + (duration - depth) / 2.0f;
+                        block.Duration = depth;
+                        block.Height = 2.0f * heightScale;
+                        block.Left = (1.0f - width) / 2.0f;
+                        block.Right = (1.0f + width) / 2.0f;
+                        curve.Blocks.Add(block);
+
+                        fill(curve, prefabStart, prefabStart + duration, 0.0f, block.Left, randomChallenge, sizeChallenge);
+                        fill(curve, prefabStart, prefabStart + duration, block.Right, 1.0f, randomChallenge, sizeChallenge);
+
+                        prefabStart += duration;
+                        break;
+                    }
+
+                    case PrefabType.Divide2:
+                    {
+                        float width = 0.2f;
+                        float duration = 15.0f;
+                        divide(curve, 2, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
+                        prefabStart += duration;
+                        break;
+                    }
+
+                    case PrefabType.Divide3:
+                    {
+                        float width = 0.1f;
+                        float duration = 15.0f;
+                        divide(curve, 3, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
+                        prefabStart += duration;
+                        break;
+                    }
+
+                    default: break;
                 }
 
-                case PrefabType.Jig1:
-                {
-                    float width = challengeValue(0.4f, 0.6f, sizeChallenge);
-                    float duration = 25.0f;
-                    float depth = 15.0f;
-                    int side = rng.Range(0, 2);
-
-                    Block block = new Block();
-                    block.Start = prefabStart + (duration - depth) / 2.0f;
-                    block.Duration = depth;
-                    block.Height = 2.0f * heightScale;
-                    block.Left = (0 == side) ? 0.0f : (1.0f - width);
-                    block.Right = (0 == side) ? width : 1.0f;
-                    curve.Blocks.Add(block);
-
-                    fill(curve, prefabStart, block.Duration, (0 == side) ? block.Right : 0.0f, (0 == side) ? 1.0f : block.Left, randomChallenge, sizeChallenge);
-                    fill(curve, block.Start, block.Duration - block.Start, 0.0f, 1.0f, randomChallenge, sizeChallenge);
-                    fill(curve, block.Start + block.Duration, prefabStart + duration, 0.0f, 1.0f, randomChallenge, sizeChallenge);
-
-                    prefabStart += duration;
-                    break;
-                }
-
-                case PrefabType.Divide:
-                {
-                    float width = 0.3f;
-                    float duration = 15.0f;
-                    divide(curve, 1, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
-                    prefabStart += duration;
-                    break;
-                }
-
-                case PrefabType.Random:
-                {
-                    float duration = 25.0f;
-                    fill(curve, prefabStart, prefabStart + duration, 0.0f, 1.0f, randomChallenge + 1, sizeChallenge);
-                    prefabStart += duration;
-                    break;
-                }
-
-                case PrefabType.Wall:
-                {
-                    float duration = 25.0f;
-                    float depth = 15.0f;
-                    float width = challengeValue(0.1f, 0.3f, sizeChallenge);
-
-                    Block block = new Block();
-                    block.Start = prefabStart + (duration - depth) / 2.0f;
-                    block.Duration = depth;
-                    block.Height = 2.0f * heightScale;
-                    block.Left = (1.0f - width) / 2.0f;
-                    block.Right = (1.0f + width) / 2.0f;
-                    curve.Blocks.Add(block);
-
-                    fill(curve, prefabStart, prefabStart + duration, 0.0f, block.Left, randomChallenge, sizeChallenge);
-                    fill(curve, prefabStart, prefabStart + duration, block.Right, 1.0f, randomChallenge, sizeChallenge);
-
-                    prefabStart += duration;
-                    break;
-                }
-
-                case PrefabType.Divide2:
-                {
-                    float width = 0.2f;
-                    float duration = 15.0f;
-                    divide(curve, 2, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
-                    prefabStart += duration;
-                    break;
-                }
-
-                case PrefabType.Divide3:
-                {
-                    float width = 0.1f;
-                    float duration = 15.0f;
-                    divide(curve, 3, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
-                    prefabStart += duration;
-                    break;
-                }
-
-                default: break;
+                // Add space between prefabs
+                float prefabSpace = challengeValue(25.0f, 5.0f, prefabChallenge);
+                fill(curve, prefabStart, prefabStart + prefabSpace, 0.0f, 1.0f, randomChallenge, sizeChallenge);
+                prefabStart += prefabSpace;
             }
-
-            // Add space between prefabs
-            float prefabSpace = challengeValue(25.0f, 5.0f, prefabChallenge);
-            fill(curve, prefabStart, prefabStart + prefabSpace, 0.0f, 1.0f, randomChallenge, sizeChallenge);
-            prefabStart += prefabSpace;
         }
 
         // Build the section mesh
