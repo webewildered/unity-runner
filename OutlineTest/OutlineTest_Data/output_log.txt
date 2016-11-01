@@ -1,4 +1,4 @@
-Initialize engine version: 5.3.5f1 (960ebf59018a)
+Initialize engine version: 5.4.1f1 (649f48bbbf0f)
 GfxDevice: creating device client; threaded=1
 Direct3D:
     Version:  Direct3D 11.0 [level 11.0]
@@ -6,22 +6,22 @@ Direct3D:
     Vendor:   ATI
     VRAM:     1008 MB
 Begin MonoManager ReloadAssembly
-Platform assembly: C:\Users\Max\Documents\OutlineTest\OutlineTest_Data\Managed\UnityEngine.dll (this message is harmless)
-Loading C:\Users\Max\Documents\OutlineTest\OutlineTest_Data\Managed\UnityEngine.dll into Unity Child Domain
-Platform assembly: C:\Users\Max\Documents\OutlineTest\OutlineTest_Data\Managed\Assembly-CSharp.dll (this message is harmless)
-Loading C:\Users\Max\Documents\OutlineTest\OutlineTest_Data\Managed\Assembly-CSharp.dll into Unity Child Domain
-Platform assembly: C:\Users\Max\Documents\OutlineTest\OutlineTest_Data\Managed\UnityEngine.UI.dll (this message is harmless)
-Loading C:\Users\Max\Documents\OutlineTest\OutlineTest_Data\Managed\UnityEngine.UI.dll into Unity Child Domain
-Platform assembly: C:\Users\Max\Documents\OutlineTest\OutlineTest_Data\Managed\UnityEngine.Networking.dll (this message is harmless)
-Loading C:\Users\Max\Documents\OutlineTest\OutlineTest_Data\Managed\UnityEngine.Networking.dll into Unity Child Domain
-- Completed reload, in  0.045 seconds
-Platform assembly: C:\Users\Max\Documents\OutlineTest\OutlineTest_Data\Managed\System.Core.dll (this message is harmless)
-Platform assembly: C:\Users\Max\Documents\OutlineTest\OutlineTest_Data\Managed\System.dll (this message is harmless)
-desktop: 1680x1050 60Hz; virtual: 1680x1050 at 0,0
+Platform assembly: C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\UnityEngine.dll (this message is harmless)
+Loading C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\UnityEngine.dll into Unity Child Domain
+Platform assembly: C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\Assembly-CSharp.dll (this message is harmless)
+Loading C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\Assembly-CSharp.dll into Unity Child Domain
+Platform assembly: C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\UnityEngine.UI.dll (this message is harmless)
+Loading C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\UnityEngine.UI.dll into Unity Child Domain
+Platform assembly: C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\UnityEngine.Networking.dll (this message is harmless)
+Loading C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\UnityEngine.Networking.dll into Unity Child Domain
+- Completed reload, in  0.047 seconds
+Platform assembly: C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\System.Core.dll (this message is harmless)
+Platform assembly: C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\System.dll (this message is harmless)
+desktop: 1920x1080 60Hz; virtual: 3600x1080 at 0,0
 <RI> Initializing input.
 <RI> Input initialized.
 <RI> Initialized touch support.
-UnloadTime: 0.514171 ms
+UnloadTime: 0.810610 ms
 Setting up 2 worker threads for Enlighten.
-  Thread -> id: 128c -> priority: 1 
-  Thread -> id: 37d8 -> priority: 1 
+  Thread -> id: 29bc -> priority: 1 
+  Thread -> id: 3f20 -> priority: 1 

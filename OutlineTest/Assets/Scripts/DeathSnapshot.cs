@@ -4,9 +4,10 @@ using System.Collections;
 public class DeathSnapshot : MonoBehaviour
 {
     public GameObject MainCamera;
-    public Texture2D Texture;
     public Shader Shader;
     Camera cam;
+
+    public Texture2D Texture;
     public RenderTexture Target;
 
     Vector3 velocity;
@@ -27,7 +28,7 @@ public class DeathSnapshot : MonoBehaviour
         Texture = new Texture2D(width, height, TextureFormat.RGB24, false);
     }
 
-    void Update()
+    void LateUpdate()
     {
         transform.position = MainCamera.transform.position;
         transform.rotation = MainCamera.transform.rotation;
