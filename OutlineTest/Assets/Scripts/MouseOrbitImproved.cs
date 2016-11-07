@@ -28,7 +28,8 @@ public class MouseOrbitImproved : MonoBehaviour
         y = angles.x;
     }
 
-    void LateUpdate()
+    //void LateUpdate()
+    void Update()
     {
         if (target)
         {

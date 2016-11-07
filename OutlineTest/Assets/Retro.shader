@@ -37,6 +37,7 @@
 			{
 				float4 vertex : SV_POSITION;
 				float3 normal : NORMAL;
+				float3 position : TEXCOORD0;
 			};
 
 			sampler2D _MainTex;
@@ -47,6 +48,7 @@
 				v2f o;
 				o.vertex = mul(UNITY_MATRIX_MVP, v.vertex);
 				o.normal = mul(unity_ObjectToWorld, v.normal);
+				o.position = o.vertex.xyz;
 				return o;
 			}
 			
@@ -62,7 +64,7 @@
 				float lightDotNormal = dot(_LightDirection, normalize(i.normal));	// TODO do we need to normalize i.normal?
 				float shade = (lightDotNormal - lowShade) / (highShade - lowShade);	// <0 if dot<low, 0 to 1 if between low and high, >1 if over high
 				shade = clamp(ceil(shade), 0, 2);	// 0 if dot<low, 1 if between low and high, 2 if over high
-				float bias = ((i.vertex.x + i.vertex.y - 1.0) % 2.0 );	// 0 or 1 for every other pixel
+				float bias = ((i.position.x + i.position.y - 1.0) % 2.0 );	// 0 or 1 for every other pixel
 				float shadeFactor = floor((shade + bias) / 2.0);	// darken every pixel with shade=2, every other pixel with shade=1, no pixel with shade = 0
 
 				// Highlighting
