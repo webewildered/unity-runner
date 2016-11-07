@@ -33,7 +33,7 @@ public class Runner : MonoBehaviour
     Quaternion rotationUp;      // Rotation about the up axis
     Quaternion rotationForward; // Rotation about the forward axis, after rotationUp
 
-    bool idleMode; // debug
+    public bool IdleMode = false; // debug
 
     void Start ()
     {
@@ -46,8 +46,6 @@ public class Runner : MonoBehaviour
 
         rotationUp = Quaternion.identity;
         rotationForward = Quaternion.identity;
-
-        idleMode = false;
 
         targetCameraOffsetLs = new Vector3(0.0f, 3.0f, -6.0f);
     }
@@ -74,7 +72,7 @@ public class Runner : MonoBehaviour
         const float jumpingGravity = 30.0f;
 
         // Debug only
-        if (idleMode)
+        if (IdleMode)
         {
             animator.SetTrigger("Fall");
             return;

@@ -1,0 +1,223 @@
+version of retropost that was never checked in, contains lots of failed attmepts to get single-pixel-wide 
+outline drawing.  Keeping it around in case there's something useful in here.
+
+
+
+Shader "Hidden/RetroPost"
+{
+	Properties
+	{
+		_MainTex ("Texture", 2D) = "white" {}
+		_EdgeTexture("EdgeTexture", 2D) = "white" {}
+		_InvScreenWidth ("InvScreenWidth", Float) = 0
+		_InvScreenHeight ("InvScreenHeight", Float) = 0
+	}
+	SubShader
+	{
+		// No culling or depth
+		Cull Off ZWrite Off ZTest Always
+
+		Pass
+		{
+			CGPROGRAM
+			#pragma enable_d3d11_debug_symbols
+			#pragma vertex vert
+			#pragma fragment frag
+			
+			#include "UnityCG.cginc"
+
+			float _InvScreenWidth;
+			float _InvScreenHeight;
+			float4x4 _InvProjection;
+
+			sampler2D _MainTex;
+			sampler2D _EdgeTexture;
+			sampler2D _CameraDepthNormalsTexture;
+
+			struct appdata
+			{
+				float4 vertex : POSITION;
+				float2 uv : TEXCOORD0;
+			};
+
+			struct v2f
+			{
+				float2 uv : TEXCOORD0;
+				float4 vertex : SV_POSITION;
+			};
+
+			v2f vert (appdata v)
+			{
+				v2f o;
+				o.vertex = mul(UNITY_MATRIX_MVP, v.vertex);
+				o.uv = v.uv;
+				return o;
+			}
+
+			struct ViewPixel
+			{
+				float3 position;
+				float3 normal;
+				float priority;
+				float rawDepth; // need this?
+			};
+
+			ViewPixel getViewPixel(float2 texCoord)
+			{
+				ViewPixel vpx;
+				DecodeDepthNormal(tex2D(_CameraDepthNormalsTexture, texCoord), vpx.rawDepth, vpx.normal);
+
+				// Depth texture contains -z / farPlane, _ProjectionParams.z = farPlane
+				float minusZ = _ProjectionParams.z * vpx.rawDepth;
+
+				// we don't really need the full inv projection matrix, just 1,1 and 2,2
+				float2 clipCoord = texCoord * 2.0 - float2(1.0, 1.0);
+				float4 pos = mul(_InvProjection, float4(-clipCoord.x, clipCoord.y, 0.0, 1.0)); // why -x? works but not sure. left hand / right hand thing maybe?
+				vpx.position = float3(pos.xy, 1.0f) * -minusZ;
+				
+				vpx.priority = tex2D(_EdgeTexture, texCoord).x;
+
+				return vpx;
+			}
+			
+			float diffViewPixel(ViewPixel vpxA, ViewPixel vpxB, float bias)
+			{
+				float posDiff = abs(dot(vpxA.position - vpxB.position, vpxA.normal));
+				//return posDiff;
+				
+				float3 crossNormal = cross(vpxA.normal, vpxB.normal);
+				float sinNormalAngle = length(crossNormal);
+				float normDiff = sinNormalAngle * sinNormalAngle * sinNormalAngle;// *0.05f;
+
+				float diff = max(posDiff, normDiff);
+
+				float pDiff = vpxA.priority - vpxB.priority;
+
+				// Calculate depth and normal based priorities.
+				float rawDepthDiff = vpxB.rawDepth - vpxA.rawDepth;
+				float pDepth = sign(rawDepthDiff);
+
+				// Best working method so far, arbitrary ordering causes some bad lines though
+				//float pNormal = sign(dot(vpxA.normal - vpxB.normal, float3(0, 0, 1))); // Choose the more front-facing side
+				//pNormal += (1.0 - abs(pNormal)) * -sign(crossNormal); // If neither, choose arbitrary ordering
+				//pNormal += (1.0 - abs(pNormal)) * pDepth; // pNormal could be zero, in that case use pDepth to decide
+
+				// Graveyard of past attempts
+				//float pNormal = sign(crossNormal);
+				//pNormal += (1.0 - abs(pNormal)) * pDepth; // pNormal could be zero, in that case use pDepth to decide
+				//float pNormal = sign(dot(vpxA.normal - vpxB.normal, float3(0, 0, 1))); // Choose the more front-facing side
+				//pNormal += (1.0 - abs(pNormal)) * -sign(crossNormal); // If neither, choose arbitrary ordering
+				//pNormal += (1.0 - abs(pNormal)) * pDepth; // pNormal could be zero, in that case use pDepth to decide
+				//float pDepthLarge = 0;// floor(saturate(abs(pDepth / 0.01)));
+				//float pNormal = pDepthLarge * pDepth + (1 - pDepthLarge) * sign(dot(vpxA.normal - vpxB.normal, float3(0, 0, 1)));
+				
+				//float pn = sign(dot(vpxA.normal - vpxB.normal, float3(0, 0, 1)));
+				//pn += (1.0 - abs(pn)) * -sign(crossNormal);
+				//float pDepthLarge = 1;// floor(saturate(abs(rawDepthDiff / 0.001)));
+				//float pNormal = pn * (1 - pDepthLarge) + pDepth * pDepthLarge;
+
+				//float3 nn = vpxA.normal - vpxB.normal;
+				//float pNormal = sign(nn.z);
+				//pNormal += (1.0 - abs(pNormal)) * nn.y;
+				//pNormal += (1.0 - abs(pNormal)) * pDepth;
+
+				//float lDiff = length(vpxB.position) - length(vpxA.position);
+				//float pNormal = sign(lDiff);
+				//pNormal *= floor(saturate(abs(lDiff / 0.05)));
+
+				//float useC = floor(1.1 * dot(vpxA.normal, vpxC.normal));
+				//float useA = 1.0 - useC;
+				//float cmpRawDepth = useC * vpxC.rawDepth + useA * vpxA.rawDepth;
+				//float pNormal = sign(vpxB.rawDepth - cmpRawDepth);
+
+				float pNormal = bias;
+				
+				// pEq is the priority when priorityA == priorityB
+				// It's possible for pDepth or pNormal to be zero, in that case bias it arbitrarily
+				float pType = vpxA.priority * 2.0f - 1.0f;
+				float pEq = pType * pDepth + (1.0 - pType) * pNormal;
+
+				// Choose the priority based on whether priorityA == priorityB
+				float pSame = 1.0 - ceil(abs(pDiff));
+				float priority = pSame * pEq + (1.0 - pSame) * ceil(pDiff);
+
+				//return diff * priority;
+				//return posDiff * priority;
+				//return normDiff * priority;
+				return diff * priority;
+			}
+
+
+			float dvp2(ViewPixel vpxA, ViewPixel vpxB)
+			{
+				float posDiff = abs(dot(vpxA.position - vpxB.position, vpxA.normal));
+				//return posDiff;
+
+				float3 crossNormal = cross(vpxA.normal, vpxB.normal);
+				float sinNormalAngle = length(crossNormal);
+				float normDiff = sinNormalAngle * sinNormalAngle * sinNormalAngle;// *0.05;
+
+				float diff = max(posDiff, normDiff);
+				const float threshold = 0.1;
+				return floor(saturate(diff / threshold));
+			}
+
+			fixed4 frag (v2f i) : SV_Target
+			{
+				// Debug
+				//float4 dn = tex2D(_CameraDepthNormalsTexture, i.uv);
+				//return fixed4(dn.r, dn.g, 0, 1);
+				
+
+				fixed4 col = tex2D(_MainTex, i.uv);
+
+				float2 coordLeft = i.uv + float2(-_InvScreenWidth, 0);
+				float2 coordRight = i.uv + float2(_InvScreenWidth, 0);
+				float2 coordUp = i.uv + float2(0, -_InvScreenHeight);
+				float2 coordDown = i.uv + float2(0, _InvScreenHeight);
+
+				float2 coordUpLeft = i.uv + float2(-_InvScreenWidth, -_InvScreenHeight);
+				float2 coordUpRight = i.uv + float2(_InvScreenWidth, -_InvScreenHeight);
+				float2 coordDownLeft = i.uv + float2(-_InvScreenWidth, _InvScreenHeight);
+				float2 coordDownRight = i.uv + float2(_InvScreenWidth, _InvScreenHeight);
+				
+				ViewPixel vpx = getViewPixel(i.uv);
+				ViewPixel vpxLeft = getViewPixel(coordLeft);
+				ViewPixel vpxRight = getViewPixel(coordRight);
+				ViewPixel vpxUp = getViewPixel(coordUp);
+				ViewPixel vpxDown = getViewPixel(coordDown);
+				ViewPixel vpxUpLeft = getViewPixel(coordUpLeft);
+				ViewPixel vpxUpRight = getViewPixel(coordUpRight);
+				ViewPixel vpxDownLeft = getViewPixel(coordDownLeft);
+				ViewPixel vpxDownRight = getViewPixel(coordDownRight);
+
+				float dUp = dvp2(vpx, vpxUp);
+				float dLeft = dvp2(vpx, vpxLeft);
+				float dUpLeft = dvp2(vpx, vpxUpLeft);
+				float lSum = dUpLeft + dLeft + dvp2(vpx, vpxDownLeft) + dUp;
+				float rSum = dvp2(vpx, vpxDown) + dvp2(vpx, vpxUpRight) + dvp2(vpx, vpxRight) + dvp2(vpx, vpxDownRight);
+				const float lFactor = 1.1;
+				const float rFactor = 0.9;
+				float dSum = lFactor * lSum + rFactor * rSum;
+				float edgeFactor = saturate(floor(dSum / 3.0)) *saturate(dUpLeft + dLeft + dUp);
+
+
+				/*
+				//float biasR = 0.0;// round(i.uv.x);
+				//float biasR = ceil(0.99 * vpx.normal.x); // [-1, 0] -> 0, (0, 1] -> 1
+				//float dMax = max(
+					//max(diffViewPixel(vpx, vpxLeft, 1.0), diffViewPixel(vpx, vpxRight, 0.0)),
+					//max(diffViewPixel(vpx, vpxUp, 0.0), diffViewPixel(vpx, vpxDown, 1.0)));
+				//float dMax = max(diffViewPixel(vpx, vpxLeft, 1.0), diffViewPixel(vpx, vpxDown, 1.0));
+				//float dMax = diffViewPixel(vpx, vpxDown, 1.0);
+				const float threshold = 0.17f;
+				float edgeFactor = saturate(floor(dMax / threshold));
+				*/
+
+				const float darken = 0.3f;
+				return fixed4(saturate(col.xyz * (1 - edgeFactor * darken)), 1);
+			}
+			ENDCG
+		}
+	}
+}

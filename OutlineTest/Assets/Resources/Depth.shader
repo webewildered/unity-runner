@@ -24,6 +24,7 @@
 			struct v2f
 			{
 				float4 vertex : SV_POSITION;
+				float depth : TEXCOORD0;
 			};
 
 			
@@ -31,12 +32,13 @@
 			{
 				v2f o;
 				o.vertex = UnityObjectToClipPos(v.vertex);
+				o.depth = o.vertex.z / _ProjectionParams.z;
 				return o;
 			}
 			
 			fixed4 frag (v2f i) : SV_Target
 			{
-				float depth = Linear01Depth(i.vertex.z);
+				float depth = i.depth;// Linear01Depth(i.depth);
 				float4 c;
 				c.xy = EncodeFloatRG(depth);
 				c.zw = float2(0, 1);

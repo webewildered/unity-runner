@@ -23,6 +23,11 @@
 
 			float _InvScreenWidth;
 			float _InvScreenHeight;
+			float4x4 _InvProjection;
+
+			sampler2D _MainTex;
+			sampler2D _EdgeTexture;
+			sampler2D _CameraDepthNormalsTexture;
 
 			struct appdata
 			{
@@ -43,106 +48,96 @@
 				o.uv = v.uv;
 				return o;
 			}
-			
-			sampler2D _MainTex;
-			sampler2D _EdgeTexture;
-			sampler2D _CameraDepthNormalsTexture;
 
-			float getDepth(float rawDepth)
+			struct ViewPixel
 			{
-				// This feels silly, there's probably a better way to do it
-				//return sqrt(sqrt(sqrt(rawDepth)));
-				//return (abs(DECODE_EYEDEPTH(rawDepth)));
-				//return abs(1.0 / (1.0 - Linear01Depth(rawDepth));
-				return rawDepth;
+				float3 position;
+				float3 normal;
+				float priority;
+			};
+
+			ViewPixel getViewPixel(float2 texCoord)
+			{
+				ViewPixel vpx;
+				float rawDepth;
+				DecodeDepthNormal(tex2D(_CameraDepthNormalsTexture, texCoord), rawDepth, vpx.normal);
+
+				// Depth texture contains -z / farPlane, _ProjectionParams.z = farPlane
+				float minusZ = _ProjectionParams.z * rawDepth;
+
+				// we don't really need the full inv projection matrix, just 1,1 and 2,2
+				float2 clipCoord = texCoord * 2.0 - float2(1.0, 1.0);
+				float4 pos = mul(_InvProjection, float4(-clipCoord.x, clipCoord.y, 0.0, 1.0)); // why -x? works but not sure. left hand / right hand thing maybe?
+				vpx.position = float3(pos.xy, 1.0f) * -minusZ;
+				
+				vpx.priority = tex2D(_EdgeTexture, texCoord).x;
+
+				return vpx;
 			}
 
-			float depthDiff(float depthA, float3 normalA, float priorityA, float rawDepthB, float3 normalB, float priorityB)
+			// returns 1.0 if pixels are different enough to have an outline between them, 0.0 otherwise.
+			float diffViewPixel(ViewPixel vpxA, ViewPixel vpxB)
 			{
-				// Neighbor difference based on depth
-				const float normalWeight = 10.0f;
-				float normalFactor = normalWeight + 1.0f - normalWeight * dot(normalA, normalB);
-				float depthDifference = (getDepth(rawDepthB) - depthA);
-				float dDiff = abs(depthDifference) * normalFactor;
+				// Check difference in position along the normal, draws edges between non-continuous surfaces
+				float posDiff = abs(dot(vpxA.position - vpxB.position, vpxA.normal));
 
-				// Neighbor difference based on normal
-				// TODO: get cos angle instead?
-				float3 crossNormal = cross(normalA, normalB);
+				// Check difference in normals, draws edges at sharp turns in a continuous surface
+				float3 crossNormal = cross(vpxA.normal, vpxB.normal);
 				float sinNormalAngle = length(crossNormal);
-				float nDiff = sinNormalAngle * sinNormalAngle * sinNormalAngle * 0.05f;
+				float normDiff = sinNormalAngle * sinNormalAngle * sinNormalAngle;
 
-				// A sufficient difference in either depth or normal causes an outline
-				float diff = max(dDiff, nDiff);
+				// Never outline against a higher priority neighbor
+				// Possible input priorities are 0, 0.5, 1; priority is 1.0 if A.priority >= B.priority, else 0.0
+				float priority = ceil(((vpxA.priority - vpxB.priority) + 0.1) / 1.2);
 
-				// We want to draw the outline one pixel thick, but both neighboring pixels will calculate the same difference,
-				// so we need to pick which pixel the outline will go on.  This is done by a priority which is set by the 
-				// material properties of the object that the pixel was drawn by.  There are three priorities, background = 0,
-				// level = 0.5, character = 1.  The outline is draw on the pixel with higher priority. If two neighboring pixels
-				// have the same priority, then we use an algorithm for that priority: for character the pixel with lower depth
-				// is chosen, for mesh the pixel with normal more aligned to the camera is chosen, for background it doesn't
-				// matter because there should never be an outline between two background pixels. The outline pixel is selected
-				// by multiplying diff by the final priority value.  If the priority value is less than or equal to zero, that
-				// excludes this pixel from being outlined.
+				float diff = max(posDiff, normDiff) * priority;
+				const float threshold = 0.5;
+				return floor(saturate(diff / threshold));
+			}
 
-				float pDiff = priorityA - priorityB;
-
-				// Calculate depth and normal based priorities.
-				float pDepth = sign(depthDifference);
-				float eps = 0.01;
-				float pNormal = sign(crossNormal);
-				pNormal -= (1.0 - abs(pNormal)) * pDepth; // pNormal could be zero, in that case use pDepth to decide
-
-				// pEq is the priority when priorityA == priorityB
-				// It's possible for pDepth or pNormal to be zero, in that case bias it arbitrarily
-				float pType = priorityA * 2.0f - 1.0f;
-				float pEq = pType * pDepth + (1.0 - pType) * pNormal;
-
-				// Choose the priority based on whether priorityA == priorityB
-				float pSame = 1.0 - ceil(abs(pDiff));
-				float priority = pSame * pEq + (1.0 - pSame) * ceil(pDiff);
-
-				return diff * priority;
+			// Returns 1.0 if priority is greater than the one at texCoord, otherwise 0.0
+			float diffPriority(float priority, float2 texCoord)
+			{
+				// Possible input priorities are 0, 0.5, 1
+				float priorityB = tex2D(_EdgeTexture, texCoord).x;
+				return max(0, ceil(priority - priorityB));
 			}
 
 			fixed4 frag (v2f i) : SV_Target
 			{
-				fixed4 col = tex2D(_MainTex, i.uv);
+				// Debug - draw viewspace normals
+				//float4 dn = tex2D(_CameraDepthNormalsTexture, i.uv);
+				//return fixed4(dn.r, dn.g, 0, 1);
 
-				// TODO - need DECODE_EYEDEPTH?
-				// Note - need to abs(DECODE_EYEDEPTH) because unset pixels will have raw depth value >1, DECODE_EYEDEPTH
-				// basically returns 1 / (1 - rawDepth) so they will get a huge negative value when we really want a huge positive value
-				// Depth/normal sample at pixel
-				float rawDepth; 
-				float3 normal;
-				DecodeDepthNormal(tex2D(_CameraDepthNormalsTexture, i.uv), rawDepth, normal);
-				float depth = getDepth(rawDepth);
-				float priority = tex2D(_EdgeTexture, i.uv).x;
-
-				float2 coordLeft = i.uv - float2(_InvScreenWidth, 0);
+				float2 coordLeft = i.uv + float2(-_InvScreenWidth, 0);
+				float2 coordUp = i.uv + float2(0, _InvScreenHeight);
+				float2 coordUpLeft = i.uv + float2(-_InvScreenWidth, _InvScreenHeight);
 				float2 coordRight = i.uv + float2(_InvScreenWidth, 0);
-				float2 coordUp = i.uv - float2(0, _InvScreenHeight);
-				float2 coordDown = i.uv + float2(0, _InvScreenHeight);
+				float2 coordDown = i.uv + float2(0, -_InvScreenHeight);
+				
+				// Depth texture samples
+				ViewPixel vpx = getViewPixel(i.uv);
+				ViewPixel vpxLeft = getViewPixel(coordLeft);
+				ViewPixel vpxUp = getViewPixel(coordUp);
+				ViewPixel vpxUpLeft = getViewPixel(coordUpLeft);
 
-				float dLeft, dRight, dUp, dDown;
-				float3 nLeft, nRight, nUp, nDown;
-				DecodeDepthNormal(tex2D(_CameraDepthNormalsTexture, coordLeft), dLeft, nLeft);
-				DecodeDepthNormal(tex2D(_CameraDepthNormalsTexture, coordRight), dRight, nRight);
-				DecodeDepthNormal(tex2D(_CameraDepthNormalsTexture, coordUp), dUp, nUp);
-				DecodeDepthNormal(tex2D(_CameraDepthNormalsTexture, coordDown), dDown, nDown);
+				// 4 comparisons: this vs left, this vs up, this vs upleft, up vs upleft.
+				// Pixel is outlined if left || (up && (upleft || upUpLeft)).
+				// This produces a single pixel wide outline.
+				float dUp = diffViewPixel(vpx, vpxUp);
+				float dLeft = diffViewPixel(vpx, vpxLeft);
+				float dUpLeft = diffViewPixel(vpx, vpxUpLeft);
+				float dUpUpLeft = diffViewPixel(vpxUp, vpxUpLeft);
 
-				float pLeft = tex2D(_EdgeTexture, coordLeft).x;
-				float pRight = tex2D(_EdgeTexture, coordRight).x;
-				float pUp = tex2D(_EdgeTexture, coordUp).x;
-				float pDown = tex2D(_EdgeTexture, coordDown).x;
+				// Pixel is also outlined if it's higher priority than a neighbor to the right or below,
+				// since those neighbors won't outline against this pixel
+				float pRight = diffPriority(vpx.priority, coordRight);
+				float pDown = diffPriority(vpx.priority, coordDown);
 
-				float dMax = max(
-					max(depthDiff(depth, normal, priority, dLeft, nLeft, pLeft), depthDiff(depth, normal, priority, dRight, nRight, pRight)),
-					max(depthDiff(depth, normal, priority, dUp, nUp, pUp), depthDiff(depth, normal, priority, dDown, nDown, pDown)));
+				float edgeFactor = min(1.0, dLeft + dUp * (1.0 - dUpUpLeft + dUpLeft) + pRight + pDown);
 
-				const float threshold = 0.01f;
 				const float darken = 0.3f;
-				float edgeFactor = saturate(floor(dMax / threshold));
-
+				fixed4 col = tex2D(_MainTex, i.uv);
 				return fixed4(saturate(col.xyz * (1 - edgeFactor * darken)), 1);
 			}
 			ENDCG

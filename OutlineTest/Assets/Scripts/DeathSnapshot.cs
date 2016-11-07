@@ -63,7 +63,7 @@ public class DeathSnapshot : MonoBehaviour
 
                 // Get the pixel position in viewport space
                 float depth = colors[i].r + colors[i].g / 255.0f;
-                float z = depth * (cam.farClipPlane - cam.nearClipPlane) + cam.nearClipPlane;// + Random.Range(0.0f, 0.4f);
+                float z = depth * cam.farClipPlane;// * (cam.farClipPlane - cam.nearClipPlane) + cam.nearClipPlane;// + Random.Range(0.0f, 0.4f);
                 float x = (i % Texture.width) * invWidth;
                 float y = (i / Texture.width) * invHeight;
                 Vector4 posViewport = new Vector4(x, y, z);
