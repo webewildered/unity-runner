@@ -24,13 +24,34 @@ public class FloorGenerator : MonoBehaviour
     float lastWidth = baseWidth;
     float widthV = 0.0f;
 
-    struct Block : IComparable<Block>
+    class Block : IComparable<Block>
     {
         public float Start;
         public float Duration;
         public float Left;
         public float Right;
         public float Height;
+
+        public List<Vector3> Vertices;
+        public List<Vector3> Normals;
+        public List<int> Triangles;
+
+        public SampledBlock Sampled;
+
+        public Block()
+        {
+            Start = 0;
+            Duration = 0;
+            Left = 0;
+            Right = 0;
+            Height = 0;
+
+            Vertices = new List<Vector3>();
+            Normals = new List<Vector3>();
+            Triangles = new List<int>();
+
+            Sampled = new SampledBlock();
+        }
 
         public int CompareTo(Block other)
         {
@@ -245,43 +266,55 @@ public class FloorGenerator : MonoBehaviour
         curve.Blocks.Add(endBlock);
     }    // pass vertices in CW order
 
-    void appendFace(int v0, int v1, int v2, int v3, ref List<Vector3> vertices, ref List<Vector3> normals, ref List<int> triangles)
+    void appendFace(Block block, int v0, int v1, int v2, int v3)
     {
-        Vector3 e0 = vertices[v1] - vertices[v0];
-        Vector3 e1 = vertices[v2] - vertices[v0];
+        Vector3 e0 = block.Vertices[v1] - block.Vertices[v0];
+        Vector3 e1 = block.Vertices[v2] - block.Vertices[v0];
         Vector3 normal = Vector3.Cross(e0, e1);
 
-        normals[v0] = normal;
-        normals[v1] = normal;
-        normals[v2] = normal;
-        normals[v3] = normal;
+        block.Normals[v0] = normal;
+        block.Normals[v1] = normal;
+        block.Normals[v2] = normal;
+        block.Normals[v3] = normal;
 
-        triangles.Add(v0);
-        triangles.Add(v1);
-        triangles.Add(v2);
-        triangles.Add(v0);
-        triangles.Add(v2);
-        triangles.Add(v3);
+        block.Triangles.Add(v0);
+        block.Triangles.Add(v1);
+        block.Triangles.Add(v2);
+        block.Triangles.Add(v0);
+        block.Triangles.Add(v2);
+        block.Triangles.Add(v3);
     }
 
-    void appendBlockVertices(Block block, Vector3 center, Vector3 arm, ref List<Vector3> vertices, ref List<Vector3> normals)
+    Vector3 blockLeft(Block block, Vector3 center, Vector3 arm)
     {
-        Vector3 left = center + (block.Left * 2.0f - 1.0f) * arm;
-        Vector3 right = center + (block.Right * 2.0f - 1.0f) * arm;
-        Vector3 vert = up * block.Height;
-        vertices.Add(left);
-        vertices.Add(left + vert);
-        vertices.Add(left + vert);
-        vertices.Add(right + vert);
-        vertices.Add(right + vert);
-        vertices.Add(right);
+        return center + (block.Left * 2.0f - 1.0f) * arm;
+    }
 
-        normals.Add(Vector3.zero);
-        normals.Add(Vector3.zero);
-        normals.Add(Vector3.zero);
-        normals.Add(Vector3.zero);
-        normals.Add(Vector3.zero);
-        normals.Add(Vector3.zero);
+    Vector3 blockRight(Block block, Vector3 center, Vector3 arm)
+    {
+        return center + (block.Right * 2.0f - 1.0f) * arm;
+    }
+
+    int appendBlockVertices(Block block, Vector3 left, Vector3 right)
+    {
+        int vertexIndex = block.Vertices.Count;
+
+        Vector3 vert = up * block.Height;
+        block.Vertices.Add(left);
+        block.Vertices.Add(left + vert);
+        block.Vertices.Add(left + vert);
+        block.Vertices.Add(right + vert);
+        block.Vertices.Add(right + vert);
+        block.Vertices.Add(right);
+
+        block.Normals.Add(Vector3.zero);
+        block.Normals.Add(Vector3.zero);
+        block.Normals.Add(Vector3.zero);
+        block.Normals.Add(Vector3.zero);
+        block.Normals.Add(Vector3.zero);
+        block.Normals.Add(Vector3.zero);
+
+        return vertexIndex;
     }
 
     void appendCurve(Curve curve, float length, ref List<Vector3> vertices, ref List<Vector3> normals, ref List<int> triangles)
@@ -352,22 +385,25 @@ public class FloorGenerator : MonoBehaviour
                 minBlockIndex = Math.Min(minBlockIndex, blockIndex);
                 blockIndex++;
 
+                SampledBlock.Sample sample = new SampledBlock.Sample();
+                sample.Left = blockLeft(block, center, arm);
+                sample.Right = blockRight(block, center, arm);
+                block.Sampled.Samples.Add(sample);
+
                 // Add block vertices
-                appendBlockVertices(block, center, arm, ref vertices, ref normals);
+                int blockVertexIndex = appendBlockVertices(block, sample.Left, sample.Right);
                 if (t - block.Start < Res)
                 {
                     // Create the front face
-                    appendFace(vertexIndex, vertexIndex + 1, vertexIndex + 4, vertexIndex + 5, ref vertices, ref normals, ref triangles);
-                    vertexIndex += 6;
+                    appendFace(block, blockVertexIndex, blockVertexIndex + 1, blockVertexIndex + 4, blockVertexIndex + 5);
                 }
                 else
                 {
                     // Create the side faces
-                    appendBlockVertices(block, lastCenter, lastArm, ref vertices, ref normals);
-                    appendFace(vertexIndex + 0, vertexIndex + 1, vertexIndex + 7, vertexIndex + 6, ref vertices, ref normals, ref triangles);
-                    appendFace(vertexIndex + 2, vertexIndex + 3, vertexIndex + 9, vertexIndex + 8, ref vertices, ref normals, ref triangles);
-                    appendFace(vertexIndex + 4, vertexIndex + 5, vertexIndex + 11, vertexIndex + 10, ref vertices, ref normals, ref triangles);
-                    vertexIndex += 12;
+                    appendBlockVertices(block, blockLeft(block, lastCenter, lastArm), blockRight(block, lastCenter, lastArm));
+                    appendFace(block, blockVertexIndex + 0, blockVertexIndex + 1, blockVertexIndex + 7, blockVertexIndex + 6);
+                    appendFace(block, blockVertexIndex + 2, blockVertexIndex + 3, blockVertexIndex + 9, blockVertexIndex + 8);
+                    appendFace(block, blockVertexIndex + 4, blockVertexIndex + 5, blockVertexIndex + 11, blockVertexIndex + 10);
                 }
             }
 
@@ -758,6 +794,25 @@ public class FloorGenerator : MonoBehaviour
         MeshRenderer renderer = section.AddComponent<MeshRenderer>();
         setMesh(section, vertices.ToArray(), normals.ToArray(), triangles.ToArray());
         renderer.material = MeshMaterial;
+
+        // Create game object for each block
+        for(int i = 0; i < curve.Blocks.Count; i++)
+        {
+            Block block = curve.Blocks[i];
+            GameObject blockObj = new GameObject();
+            blockObj.transform.parent = section.transform;
+            blockObj.AddComponent<MeshFilter>();
+            blockObj.AddComponent<MeshCollider>();
+
+            Obstacle obstacle = blockObj.AddComponent<Obstacle>();
+            obstacle.Block = block.Sampled;
+            obstacle.Block.Height = block.Height;
+            obstacle.MeshMaterial = MeshMaterial;
+
+            renderer = blockObj.AddComponent<MeshRenderer>();
+            setMesh(blockObj, block.Vertices.ToArray(), block.Normals.ToArray(), block.Triangles.ToArray());
+            renderer.material = MeshMaterial;
+        }
     }
 
     void setMesh(GameObject gameObject, Vector3[] vertices, Vector3[] normals, int[] triangles)

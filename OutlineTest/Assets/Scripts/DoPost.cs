@@ -31,17 +31,6 @@ public class DoPost : MonoBehaviour
         //material.SetMatrix("_InvVP", viewProj.inverse);
         material.SetMatrix("_InvProjection", proj.inverse);
 
-        //test
-        Vector4 testPosition = new Vector4(0.5f, 0.0f, 9.5f, 1.0f);
-        Vector4 testPositionView = cam.worldToCameraMatrix * testPosition;
-        Vector4 projPositionRhw = proj * testPositionView;
-        Vector3 projPosition = new Vector3(projPositionRhw.x, projPositionRhw.y, projPositionRhw.z) * (1.0f / projPositionRhw.w);
-        Vector4 testRecalc = projPosition; testRecalc.w = 1.0f;
-        Vector4 testResult = proj.inverse * testRecalc;
-
-        Vector4 projPositionRhw2 = proj * testPositionView;
-        Vector3 projPosition2 = new Vector3(projPositionRhw2.x, projPositionRhw2.y, projPositionRhw2.z) * (1.0f / projPositionRhw2.w);
-
         material.SetTexture("_EdgeTexture", EdgeCamera.GetComponent<EdgeCamera>().Target);
         Graphics.Blit (source, destination, material);
 	}
