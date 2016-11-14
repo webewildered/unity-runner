@@ -35,6 +35,9 @@ public class Runner : MonoBehaviour
 
     public bool IdleMode = false; // debug
 
+    // Layer mask for collision with everything other than the character and debris
+    const int layerMask = ~((1 << 8) | (1 << 9));
+
     void Start ()
     {
         animator = GetComponent<Animator>();
@@ -52,7 +55,7 @@ public class Runner : MonoBehaviour
 
     bool checkGround(out RaycastHit hit)
     {
-        return Physics.Raycast(transform.position + up, -2 * up, out hit);
+        return Physics.Raycast(transform.position + up, -2 * up, out hit, Mathf.Infinity, layerMask);
     }
 
     void fall()
@@ -93,61 +96,76 @@ public class Runner : MonoBehaviour
         RaycastHit hit;
         switch (state)
         {
-            case State.Running:
-                // Check ground
+        case State.Running:
+            // Check ground
+            if (checkGround(out hit))
+            {
+                // Check jump
+                if (Input.GetKeyDown("joystick button 0") &&
+                    animator.GetCurrentAnimatorStateInfo(0).IsName("Run"))
+                {
+                    // Transition to jump
+                    const float jumpSpeed = 40.0f;
+                    float normalizedTime = animator.GetCurrentAnimatorStateInfo(0).normalizedTime;
+                    animator.SetBool("Left", normalizedTime < 0.25f || normalizedTime > 0.75f);
+                    animator.SetTrigger("Jump");
+                    state = State.Jumping;
+                    velocity += (jumpSpeed - Vector3.Dot(velocity, up)) * up;
+                }
+
+                // Check bomb
+                if (Input.GetKeyDown("joystick button 1"))
+                {
+                    const float bombRadius = 15.0f;
+                    Collider[] bombHits = Physics.OverlapSphere(transform.position, bombRadius);
+                    foreach (Collider bombHit in bombHits)
+                    {
+                        Obstacle obstacle = bombHit.gameObject.GetComponent<Obstacle>();
+                        if (obstacle != null)
+                        {
+                            obstacle.Bomb(transform.position);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                fall();
+            }
+            break;
+
+        case State.Jumping:
+            const float glideSpeed = 15.0f;
+            float upSpeed = Vector3.Dot(velocity, up);
+            if (upSpeed < glideSpeed)
+            {
+                // Transition to gliding
+                state = State.Gliding;
+                animator.SetTrigger("Glide");
+            }
+            break;
+
+        case State.Gliding:
+            if (transform.position.y + velocity.y * Time.deltaTime < 0.0f)
+            {
                 if (checkGround(out hit))
                 {
-                    // Check jump
-                    if (Input.GetKeyDown("joystick button 0") &&
-                        animator.GetCurrentAnimatorStateInfo(0).IsName("Run"))
-                    {
-                        // Transition to jump
-                        const float jumpSpeed = 40.0f;
-                        float normalizedTime = animator.GetCurrentAnimatorStateInfo(0).normalizedTime;
-                        animator.SetBool("Left", normalizedTime < 0.25f || normalizedTime > 0.75f);
-                        animator.SetTrigger("Jump");
-                        state = State.Jumping;
-                        velocity += (jumpSpeed - Vector3.Dot(velocity, up)) * up;
-                    }
+                    // Transition to landing
+                    state = State.Running;
+                    animator.SetTrigger("Land");
                 }
                 else
                 {
+                    // Missed the ground, fall
                     fall();
                 }
-                break;
+            }
+            break;
 
-            case State.Jumping:
-                const float glideSpeed = 15.0f;
-                float upSpeed = Vector3.Dot(velocity, up);
-                if (upSpeed < glideSpeed)
-                {
-                    // Transition to gliding
-                    state = State.Gliding;
-                    animator.SetTrigger("Glide");
-                }
-                break;
+        // No transitions from State.Falling
 
-            case State.Gliding:
-                if (transform.position.y + velocity.y * Time.deltaTime < 0.0f)
-                {
-                    if (checkGround(out hit))
-                    {
-                        // Transition to landing
-                        state = State.Running;
-                        animator.SetTrigger("Land");
-                    }
-                    else
-                    {
-                        // Missed the ground, fall
-                        fall();
-                    }
-                }
-                break;
-
-            // No transitions from State.Falling
-
-            default:
-                break;
+        default:
+            break;
         }
 
         //
@@ -276,7 +294,7 @@ public class Runner : MonoBehaviour
         Vector3 dir = transform.position - lastPosition;
         sphereRay.direction = dir;
         sphereRay.direction.Normalize();
-        if (Physics.SphereCast(sphereRay, 0.6f, dir.magnitude))
+        if (Physics.SphereCast(sphereRay, 0.4f, dir.magnitude, layerMask))
         {
             // Transition to dead
             state = State.Dead;
