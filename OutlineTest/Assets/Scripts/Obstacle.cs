@@ -7,6 +7,10 @@ public class Obstacle : MonoBehaviour
     public Material MeshMaterial;
     static int[] blockTriangles;
 
+    float timer = -1.0f;
+    Vector3 explosionPosition;
+    float explosionRadius;
+
     static Obstacle()
     {
         blockTriangles = new int[36];
@@ -23,7 +27,15 @@ public class Obstacle : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        // TODO - probably remove once behind the camera's far plane
+        if (timer > 0.0f)
+        {
+            if (timer < Time.deltaTime)
+            {
+                explode();
+            }
+
+            timer -= Time.deltaTime;
+        }
     }
 
     Vector3 interpolate(Vector3 a, Vector3 b, float t)
@@ -96,7 +108,7 @@ public class Obstacle : MonoBehaviour
         return mesh;
     }
 
-    void makeChunk(Mesh mesh, Vector3 position, Vector3 explosionPosition)
+    void makeChunk(Mesh mesh, Vector3 position)
     {
         GameObject chunk = new GameObject();
         chunk.transform.position = position;
@@ -116,12 +128,37 @@ public class Obstacle : MonoBehaviour
         rb.mass = 1.0f;
 
         const float explosionForce = 1000.0f;
-        const float explosionRadius = 20.0f;
-        rb.AddExplosionForce(explosionForce, explosionPosition, explosionRadius);
+        const float explosionRadiusFactor = 2.0f;
+        rb.AddExplosionForce(explosionForce, explosionPosition, explosionRadius * explosionRadiusFactor);
+        //rb.AddForce(new Vector3(0, -explosionForce / 300.0f, 0), ForceMode.Impulse);
     }
 
-    public void Bomb(Vector3 position)
+    public void Bomb(Vector3 position, float radius)
     {
+        // if behind the camera, doesn't matter, don't do anything
+        Camera camera = Camera.main;
+        Bounds bounds = GetComponent<Collider>().bounds;
+        Vector3 cameraDiff = camera.transform.position - bounds.center;
+        float ext = Mathf.Abs(bounds.extents.x * camera.transform.forward.x) + Mathf.Abs(bounds.extents.z * camera.transform.forward.z);
+        if (Vector3.Dot(cameraDiff, camera.transform.forward) > ext - camera.nearClipPlane)
+        {
+            return;
+        }
+
+        explosionPosition = position;
+        explosionRadius = radius;
+        const float timeFactor = 1.0f / 3.0f; // Time for explosion to reach end of radius
+        timer = timeFactor * (explosionPosition - bounds.center).magnitude / radius - 0.01f;
+        if (timer < 0.0f)
+        {
+            explode();
+        }
+    }
+
+    void explode()
+    {
+
+        timer = 0.0f;
         const float chunkSize = 1.0f;
 
         // Break the block into chunks
@@ -159,7 +196,7 @@ public class Obstacle : MonoBehaviour
 
             for (int j = 0; j < chunksHigh; j++)
             {
-                makeChunk(mesh, j * dy, position);
+                makeChunk(mesh, j * dy);
             }
         }
 
@@ -205,7 +242,7 @@ public class Obstacle : MonoBehaviour
 
                 for (int j = 0; j < chunksHigh; j++)
                 {
-                    makeChunk(mesh, j * dy, position);
+                    makeChunk(mesh, j * dy);
                 }
             }
         }
@@ -234,7 +271,7 @@ public class Obstacle : MonoBehaviour
                     v[7] = v[3] + dy;
 
                     Mesh mesh = makeBox(v);
-                    makeChunk(mesh, topPos, position);
+                    makeChunk(mesh, topPos);
                 }
             }
         }

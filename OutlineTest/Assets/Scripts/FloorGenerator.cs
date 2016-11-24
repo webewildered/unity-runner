@@ -5,6 +5,16 @@ using System.Collections.Generic;
 
 public class FloorGenerator : MonoBehaviour
 {
+    enum State
+    {
+        Play,
+        PostPlay,
+        TransitionOut,
+        TransitionIn
+    }
+
+    State state = State.Play;
+
     const float baseWidth = 40.0f;
     const float minWidth = 10.0f;
 
@@ -23,6 +33,20 @@ public class FloorGenerator : MonoBehaviour
     float angle = 0.0f;
     float lastWidth = baseWidth;
     float widthV = 0.0f;
+
+    // When true, use whatever levels were created in the editor
+    public bool EditorMode = false;
+    
+    int nextChallenge;
+    public int BaseChallenge = 0; // for debugging
+
+    // Progress tracking
+    public Queue<Vector4> Planes;
+
+    // When crossed, remove an old section and add a new one
+    // TODO a queue instead?
+    public Queue<Vector4> TriggerPlanes;
+    Queue<GameObject> sections;
 
     class Block : IComparable<Block>
     {
@@ -65,7 +89,6 @@ public class FloorGenerator : MonoBehaviour
             }
             return 1;
         }
-
     }
 
     abstract class Curve
@@ -413,6 +436,12 @@ public class FloorGenerator : MonoBehaviour
             Vector3 forward = new Vector4(sinAngle, 0.0f, cosAngle);
             center += forward * Res;
             t += Res;
+
+            const int triggerStep = 10;
+            if (i == triggerStep)
+            {
+                TriggerPlanes.Enqueue(new Vector4(forward.x, forward.y, forward.z, Vector3.Dot(forward, center)));
+            }
         }
     }
 
@@ -435,6 +464,11 @@ public class FloorGenerator : MonoBehaviour
         lastArm = Vector3.zero;
         t = 0.0f;
         angle = 0.0f;
+
+        Planes = new Queue<Vector4>();
+        TriggerPlanes = new Queue<Vector4>();
+        sections = new Queue<GameObject>();
+        nextChallenge = BaseChallenge;
     }
 
     enum ChallengeType
@@ -795,6 +829,8 @@ public class FloorGenerator : MonoBehaviour
         setMesh(section, vertices.ToArray(), normals.ToArray(), triangles.ToArray());
         renderer.material = MeshMaterial;
 
+        sections.Enqueue(section);
+
         // Create game object for each block
         for(int i = 0; i < curve.Blocks.Count; i++)
         {
@@ -810,6 +846,7 @@ public class FloorGenerator : MonoBehaviour
             obstacle.MeshMaterial = MeshMaterial;
 
             renderer = blockObj.AddComponent<MeshRenderer>();
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             setMesh(blockObj, block.Vertices.ToArray(), block.Normals.ToArray(), block.Triangles.ToArray());
             renderer.material = MeshMaterial;
         }
@@ -829,10 +866,92 @@ public class FloorGenerator : MonoBehaviour
 
     void Start()
     {
+        if (!EditorMode)
+        {
+            restart();
+        }
+    }
+
+    void restart()
+    {
+        Clear();
+        Append(nextChallenge++);
+        TriggerPlanes.Clear(); // no trigger on the first level
+        Append(nextChallenge++);
+        Append(nextChallenge++);
+    }
+
+    public void Advance()
+    {
+        Append(nextChallenge++);
+        GameObject section = sections.Dequeue();
+        GameObject.Destroy(section);
+    }
+
+    float transitionVelocity = 0.0f;
+    float transitionAngularVelocity = 0.0f;
+    float transitionRotation = 0.0f;
+    Vector3 transitionRotationAxis;
+    Vector3 transitionRotationPivot;
+    float postPlayTimer = 0.0f;
+
+    public void OnPlayerDied()
+    {
+        state = State.PostPlay;
+        postPlayTimer = 0.0f;
     }
 
     void Update ()
     {
-	
+	    switch (state)
+        {
+            case State.PostPlay:
+            {
+                postPlayTimer += Time.deltaTime;
+                const float postPlayDelay = 0.3f;
+                if (postPlayTimer > postPlayDelay)
+                {
+                    if (Input.GetKeyDown("joystick button 0") || Input.GetKeyDown("joystick button 1"))
+                    {
+                        state = State.TransitionOut;
+                        transitionVelocity = 7.0f;
+                        transitionAngularVelocity = 7.0f;
+
+                        Camera camera = Camera.main;
+                        transitionRotationPivot = transform.InverseTransformPoint( camera.transform.position );
+                        transitionRotationAxis = camera.transform.right;
+                    }
+                }
+                break;
+            }
+            case State.TransitionOut:
+            {
+                float deltaRotation = Mathf.Min(45.0f - transitionRotation, transitionAngularVelocity * Time.deltaTime);
+                transitionRotation += deltaRotation;
+                Vector3 pivot = transform.TransformPoint(transitionRotationPivot);
+                transform.RotateAround(pivot, transitionRotationAxis, deltaRotation);
+                transform.position = transform.position + new Vector3(0, -transitionVelocity * Time.deltaTime, 0);
+                const float transitionEnd = -1000.0f;
+                if (pivot.y < transitionEnd)
+                {
+                    transform.position = new Vector3(0, transitionEnd, 0);
+                    if (!EditorMode)
+                    {
+                        restart();
+                    }
+                    state = State.TransitionIn;
+                }
+                const float accel = 2.0f;
+                transitionVelocity *= (1.0f + 2.0f * Time.deltaTime);
+                transitionAngularVelocity *= (1.0f + accel * Time.deltaTime);
+
+                break;
+            }
+            case State.TransitionIn:
+            {
+                transform.position = transform.position * Util.Gain(10.0f);
+                break;
+            }
+        }
 	}
 }

@@ -13,6 +13,7 @@ public class Runner : MonoBehaviour
     };
 
     public Camera DeathCamera;
+    public FloorGenerator Floor;
 
     Animator animator;
     float speed;
@@ -28,7 +29,6 @@ public class Runner : MonoBehaviour
 
     Vector3 targetCameraOffsetLs;
     Vector3 targetCameraPositionWs;
-
    
     Quaternion rotationUp;      // Rotation about the up axis
     Quaternion rotationForward; // Rotation about the forward axis, after rotationUp
@@ -65,12 +65,7 @@ public class Runner : MonoBehaviour
         state = State.Falling;
     }
 
-    float gain(float g)
-    {
-        return Mathf.Min(g * Time.deltaTime, 1.0f);
-    }
-	
-	void Update ()
+    void Update()
     {
         const float jumpingGravity = 30.0f;
 
@@ -83,6 +78,7 @@ public class Runner : MonoBehaviour
 
         if (state == State.Dead)
         {
+            Floor.OnPlayerDied();
             GameObject.Destroy(gameObject);
             return;
         }
@@ -96,7 +92,7 @@ public class Runner : MonoBehaviour
         RaycastHit hit;
         switch (state)
         {
-        case State.Running:
+            case State.Running:
             // Check ground
             if (checkGround(out hit))
             {
@@ -116,14 +112,14 @@ public class Runner : MonoBehaviour
                 // Check bomb
                 if (Input.GetKeyDown("joystick button 1"))
                 {
-                    const float bombRadius = 15.0f;
+                    const float bombRadius = 30.0f;
                     Collider[] bombHits = Physics.OverlapSphere(transform.position, bombRadius);
                     foreach (Collider bombHit in bombHits)
                     {
                         Obstacle obstacle = bombHit.gameObject.GetComponent<Obstacle>();
                         if (obstacle != null)
                         {
-                            obstacle.Bomb(transform.position);
+                            obstacle.Bomb(transform.position, bombRadius);
                         }
                     }
                 }
@@ -134,7 +130,7 @@ public class Runner : MonoBehaviour
             }
             break;
 
-        case State.Jumping:
+            case State.Jumping:
             const float glideSpeed = 15.0f;
             float upSpeed = Vector3.Dot(velocity, up);
             if (upSpeed < glideSpeed)
@@ -145,7 +141,7 @@ public class Runner : MonoBehaviour
             }
             break;
 
-        case State.Gliding:
+            case State.Gliding:
             if (transform.position.y + velocity.y * Time.deltaTime < 0.0f)
             {
                 if (checkGround(out hit))
@@ -162,9 +158,9 @@ public class Runner : MonoBehaviour
             }
             break;
 
-        // No transitions from State.Falling
+            // No transitions from State.Falling
 
-        default:
+            default:
             break;
         }
 
@@ -179,91 +175,91 @@ public class Runner : MonoBehaviour
         switch (state)
         {
             case State.Running:
-                const float baseSpeed = 15.0f;
-                const float maxAngularSpeed = 65.0f;
-                const float angularSpeedGain = 10.0f;
-                const float maxAngularAcceleration = 180.0f;
+            const float baseSpeed = 15.0f;
+            const float maxAngularSpeed = 65.0f;
+            const float angularSpeedGain = 10.0f;
+            const float maxAngularAcceleration = 180.0f;
 
-                // Rotate the character
-                float desiredAngularSpeed = leftX * maxAngularSpeed * speed;
-                float angularSpeedChange = (desiredAngularSpeed - angularSpeed) * gain(angularSpeedGain);
-                float angularSpeedChange2 = Mathf.Sign(angularSpeedChange) * Mathf.Min(maxAngularAcceleration * speed * Time.deltaTime, Mathf.Abs(angularSpeedChange));
-                angularSpeed += angularSpeedChange2; // TODO timestep independent gain?
+            // Rotate the character
+            float desiredAngularSpeed = leftX * maxAngularSpeed * speed;
+            float angularSpeedChange = (desiredAngularSpeed - angularSpeed) * Util.Gain(angularSpeedGain);
+            float angularSpeedChange2 = Mathf.Sign(angularSpeedChange) * Mathf.Min(maxAngularAcceleration * speed * Time.deltaTime, Mathf.Abs(angularSpeedChange));
+            angularSpeed += angularSpeedChange2; // TODO timestep independent gain?
 
-                float deltaAngle = angularSpeed * Time.deltaTime;
-                rotationUp = Quaternion.AngleAxis(deltaAngle, up) * rotationUp;
+            float deltaAngle = angularSpeed * Time.deltaTime;
+            rotationUp = Quaternion.AngleAxis(deltaAngle, up) * rotationUp;
 
-                // Move the character forward
-                characterForward = rotationUp * new Vector3(0, 0, 1);
-                float forwardSpeed = baseSpeed * speed;
-                transform.position += characterForward * (forwardSpeed * Time.deltaTime);
+            // Move the character forward
+            characterForward = rotationUp * new Vector3(0, 0, 1);
+            float forwardSpeed = baseSpeed * speed;
+            transform.position += characterForward * (forwardSpeed * Time.deltaTime);
 
-                // Calculate velocity, used for state change next step
-                velocity = (transform.position - lastPosition) * (1.0f / Time.deltaTime);
-                break;
+            // Calculate velocity, used for state change next step
+            velocity = (transform.position - lastPosition) * (1.0f / Time.deltaTime);
+            break;
 
             case State.Jumping:
-                velocity -= up * jumpingGravity * Time.deltaTime;
-                transform.position += velocity * Time.deltaTime;
-                break;
+            velocity -= up * jumpingGravity * Time.deltaTime;
+            transform.position += velocity * Time.deltaTime;
+            break;
 
             case State.Gliding:
-                // Adjust vertical speed, use gravity but low terminal velocity
-                const float baseFallSpeed = 10.0f;
-                float fallSpeed = baseFallSpeed * speed;
-                float currentDownSpeed = -Vector3.Dot(velocity, up);
-                float downSpeed = currentDownSpeed + jumpingGravity * Time.deltaTime;
-                downSpeed = Mathf.Min(downSpeed, fallSpeed);
-                velocity += (currentDownSpeed - downSpeed) * up;
-                velocity -= up * jumpingGravity * Time.deltaTime;
-                transform.position += velocity * Time.deltaTime;
+            // Adjust vertical speed, use gravity but low terminal velocity
+            const float baseFallSpeed = 10.0f;
+            float fallSpeed = baseFallSpeed * speed;
+            float currentDownSpeed = -Vector3.Dot(velocity, up);
+            float downSpeed = currentDownSpeed + jumpingGravity * Time.deltaTime;
+            downSpeed = Mathf.Min(downSpeed, fallSpeed);
+            velocity += (currentDownSpeed - downSpeed) * up;
+            velocity -= up * jumpingGravity * Time.deltaTime;
+            transform.position += velocity * Time.deltaTime;
 
-                // Player can influence horizontal speed, but not turn
-                const float maxHorizontalSpeed = 20.0f;
-                const float horizontalSpeedGain = 20.0f;
-                const float maxHorizontalAcceleration = 20.0f;
+            // Player can influence horizontal speed, but not turn
+            const float maxHorizontalSpeed = 20.0f;
+            const float horizontalSpeedGain = 20.0f;
+            const float maxHorizontalAcceleration = 20.0f;
 
-                characterForward = transform.rotation * new Vector3(0, 0, 1);
-                Vector3 right = Vector3.Cross(up, characterForward);
-                float horizontalSpeed = Vector3.Dot(velocity, right);
+            characterForward = transform.rotation * new Vector3(0, 0, 1);
+            Vector3 right = Vector3.Cross(up, characterForward);
+            float horizontalSpeed = Vector3.Dot(velocity, right);
 
-                float desiredHorizontalSpeed = leftX * maxHorizontalSpeed * speed;
-                float horizontalSpeedChange = (desiredHorizontalSpeed - horizontalSpeed) * gain(horizontalSpeedGain);
-                float horizontalSpeedChange2 = Mathf.Sign(horizontalSpeedChange) * Mathf.Min(maxHorizontalAcceleration * speed * Time.deltaTime, Mathf.Abs(horizontalSpeedChange));
-                velocity += horizontalSpeedChange2 * right;
+            float desiredHorizontalSpeed = leftX * maxHorizontalSpeed * speed;
+            float horizontalSpeedChange = (desiredHorizontalSpeed - horizontalSpeed) * Util.Gain(horizontalSpeedGain);
+            float horizontalSpeedChange2 = Mathf.Sign(horizontalSpeedChange) * Mathf.Min(maxHorizontalAcceleration * speed * Time.deltaTime, Mathf.Abs(horizontalSpeedChange));
+            velocity += horizontalSpeedChange2 * right;
 
-                rotationForward = Quaternion.AngleAxis(-horizontalSpeed, characterForward);
+            rotationForward = Quaternion.AngleAxis(-horizontalSpeed, characterForward);
 
-                break;
+            break;
 
             case State.Falling:
-                const float fallingGravity = 30.0f;
-                const float airGain = 1.0f;
+            const float fallingGravity = 30.0f;
+            const float airGain = 1.0f;
 
-                velocity *= (1.0f - gain(airGain));
-                velocity -= up * fallingGravity * Time.deltaTime;
-                transform.position += velocity * Time.deltaTime;
+            velocity *= (1.0f - Util.Gain(airGain));
+            velocity -= up * fallingGravity * Time.deltaTime;
+            transform.position += velocity * Time.deltaTime;
 
-                // Rotate the camera to look at the falling player without moving it
-                Vector3 lookDifference = transform.position - targetCameraPositionWs;
-                Vector3 lookDirection = lookDifference;
-                lookDirection.Normalize();
-                Vector3 upDirection = Vector3.Cross(Vector3.Cross(up, lookDirection), up);
-                upDirection.Normalize();
-                targetCameraRotationWs = Quaternion.LookRotation(lookDirection, upDirection);
-                break;
+            // Rotate the camera to look at the falling player without moving it
+            Vector3 lookDifference = transform.position - targetCameraPositionWs;
+            Vector3 lookDirection = lookDifference;
+            lookDirection.Normalize();
+            Vector3 upDirection = Vector3.Cross(Vector3.Cross(up, lookDirection), up);
+            upDirection.Normalize();
+            targetCameraRotationWs = Quaternion.LookRotation(lookDirection, upDirection);
+            break;
 
             // No transitions from State.Falling
 
             default:
-                break;
+            break;
         }
 
         // Neutralize forward rotation while not gliding
         if (state != State.Gliding)
         {
             const float rotationForwardGain = 10.0f;
-            rotationForward = Quaternion.Slerp(rotationForward, Quaternion.identity, gain(rotationForwardGain));
+            rotationForward = Quaternion.Slerp(rotationForward, Quaternion.identity, Util.Gain(rotationForwardGain));
         }
 
         // Set the character rotation
@@ -285,8 +281,8 @@ public class Runner : MonoBehaviour
         const float cameraGain = 10.0f;
         const float cameraAngularGain = 4.0f;
         Camera camera = Camera.main;
-        camera.transform.position += (targetCameraPositionWs - camera.transform.position) * gain(cameraGain);
-        camera.transform.rotation = Quaternion.Slerp(camera.transform.rotation, targetCameraRotationWs, gain(cameraAngularGain));
+        camera.transform.position += (targetCameraPositionWs - camera.transform.position) * Util.Gain(cameraGain);
+        camera.transform.rotation = Quaternion.Slerp(camera.transform.rotation, targetCameraRotationWs, Util.Gain(cameraAngularGain));
 
         // Check for collision
         Ray sphereRay = new Ray();
@@ -299,6 +295,15 @@ public class Runner : MonoBehaviour
             // Transition to dead
             state = State.Dead;
             DeathCamera.GetComponent<DeathSnapshot>().Snap(velocity);
+        }
+
+        // Check for plane crossing
+        Vector4 triggerPlane = Floor.TriggerPlanes.Peek();
+        Vector3 trigger = new Vector3(triggerPlane.x, triggerPlane.y, triggerPlane.z);
+        if (Vector3.Dot(transform.position, trigger) - triggerPlane.w > 0)
+        {
+            Floor.TriggerPlanes.Dequeue();
+            Floor.Advance();
         }
 
         // Accelerate
