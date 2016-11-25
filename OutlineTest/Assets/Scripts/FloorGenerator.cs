@@ -823,6 +823,8 @@ public class FloorGenerator : MonoBehaviour
         // Create an game object to hold the new section
         GameObject section = new GameObject();
         section.transform.parent = transform;
+        section.transform.localPosition = Vector3.zero; // Mesh is built in floor-space
+        section.transform.localRotation = Quaternion.identity;
         section.AddComponent<MeshFilter>();
         section.AddComponent<MeshCollider>();
         MeshRenderer renderer = section.AddComponent<MeshRenderer>();
@@ -839,6 +841,8 @@ public class FloorGenerator : MonoBehaviour
             blockObj.transform.parent = section.transform;
             blockObj.AddComponent<MeshFilter>();
             blockObj.AddComponent<MeshCollider>();
+            blockObj.transform.localPosition = Vector3.zero; // Mesh is built in floor-space
+            blockObj.transform.localRotation = Quaternion.identity;
 
             Obstacle obstacle = blockObj.AddComponent<Obstacle>();
             obstacle.Block = block.Sampled;
@@ -888,12 +892,15 @@ public class FloorGenerator : MonoBehaviour
         GameObject.Destroy(section);
     }
 
-    float transitionVelocity = 0.0f;
-    float transitionAngularVelocity = 0.0f;
-    float transitionRotation = 0.0f;
-    Vector3 transitionRotationAxis;
-    Vector3 transitionRotationPivot;
-    float postPlayTimer = 0.0f;
+    float postPlayTimer;
+    Vector3 initialPosition;
+    Quaternion initialRotation;
+    Vector3 targetPosition;
+    Quaternion targetRotation;
+    float transitionFactor;
+    const float transitionGain = 5.0f;
+    const float transitionAngle = 45.0f;
+    const float transitionDistance = 25.0f;
 
     public void OnPlayerDied()
     {
@@ -913,43 +920,75 @@ public class FloorGenerator : MonoBehaviour
                 {
                     if (Input.GetKeyDown("joystick button 0") || Input.GetKeyDown("joystick button 1"))
                     {
-                        state = State.TransitionOut;
-                        transitionVelocity = 7.0f;
-                        transitionAngularVelocity = 7.0f;
 
-                        Camera camera = Camera.main;
-                        transitionRotationPivot = transform.InverseTransformPoint( camera.transform.position );
-                        transitionRotationAxis = camera.transform.right;
+                        // Set up the transition out animation
+                        initialPosition = transform.position;
+                        initialRotation = transform.rotation;
+                        Vector3 pivot = Camera.main.transform.position;
+                        Vector3 arm = pivot - transform.position;
+                        Vector3 axis = Camera.main.transform.right;
+                        Quaternion rotation = Quaternion.AngleAxis(transitionAngle, axis);
+                        Vector3 targetArm = rotation * arm;
+                        Vector3 targetDisplacement = new Vector3(0, -transitionDistance, 0);
+                        targetPosition = pivot + targetDisplacement - targetArm;
+                        targetRotation = transform.rotation * rotation; // or is it the other way around
+                        transitionFactor = 1.0f;
+
+                        state = State.TransitionOut;
                     }
                 }
                 break;
             }
             case State.TransitionOut:
             {
-                float deltaRotation = Mathf.Min(45.0f - transitionRotation, transitionAngularVelocity * Time.deltaTime);
-                transitionRotation += deltaRotation;
-                Vector3 pivot = transform.TransformPoint(transitionRotationPivot);
-                transform.RotateAround(pivot, transitionRotationAxis, deltaRotation);
-                transform.position = transform.position + new Vector3(0, -transitionVelocity * Time.deltaTime, 0);
-                const float transitionEnd = -1000.0f;
-                if (pivot.y < transitionEnd)
+                // Reverse gain
+                float gain = Mathf.Min(0.99f, transitionGain * Time.deltaTime);
+                float bias = 0.3f * Time.deltaTime;
+                transitionFactor = (transitionFactor - gain - bias) / (1 - gain);
+                if (transitionFactor <= 0.0f)
                 {
-                    transform.position = new Vector3(0, transitionEnd, 0);
-                    if (!EditorMode)
-                    {
-                        restart();
-                    }
+                    transitionFactor = 0.0f;
                     state = State.TransitionIn;
-                }
-                const float accel = 2.0f;
-                transitionVelocity *= (1.0f + 2.0f * Time.deltaTime);
-                transitionAngularVelocity *= (1.0f + accel * Time.deltaTime);
 
+                    // Build a new level
+                    restart();
+
+                    // Reorient so that after transitioning back in, the new level will begin right behind the camera
+                    // and run in the camera's forward direction
+                    Vector3 up = new Vector3(0, 1, 0);
+                    Vector3 right = Vector3.Cross(up, Camera.main.transform.forward);
+                    Vector3 forward = Vector3.Cross(right, up);
+                    Vector3 curveForward = new Vector3(0, 0, 1);
+                    initialPosition = Camera.main.transform.position - 10.0f * forward;
+                    initialPosition.y = 0.0f;
+                    initialRotation = Quaternion.FromToRotation(curveForward, forward);
+                    targetPosition = initialPosition + new Vector3(0, -transitionDistance, 0);
+                    targetRotation = Quaternion.AngleAxis(transitionAngle, new Vector3(1, 0, 0)) * initialRotation;
+
+                }
+
+                // Interpolate transform
+                transform.position = initialPosition * transitionFactor + targetPosition * (1.0f - transitionFactor);
+                transform.rotation = Quaternion.Slerp(targetRotation, initialRotation, transitionFactor);
                 break;
             }
             case State.TransitionIn:
             {
-                transform.position = transform.position * Util.Gain(10.0f);
+                // Reverse gain
+                float gain = Mathf.Min(0.99f, transitionGain * Time.deltaTime);
+                float bias = 0.3f * Time.deltaTime;
+                transitionFactor = transitionFactor * (1.0f - gain) + gain + bias;
+
+                if (transitionFactor >= 1.0f)
+                {
+                    transitionFactor = 1.0f;
+                    state = State.Play;
+                }
+
+                // Interpolate transform TODO move to a function
+                transform.position = initialPosition * transitionFactor + targetPosition * (1.0f - transitionFactor);
+                transform.rotation = Quaternion.Slerp(targetRotation, initialRotation, transitionFactor);
+
                 break;
             }
         }
