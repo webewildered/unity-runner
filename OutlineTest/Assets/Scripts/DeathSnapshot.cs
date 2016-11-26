@@ -7,6 +7,8 @@ public class DeathSnapshot : MonoBehaviour
     public Shader Shader;
     Camera cam;
 
+    public GameObject Floor;
+
     public Texture2D Texture;
     public RenderTexture Target;
 
@@ -95,6 +97,8 @@ public class DeathSnapshot : MonoBehaviour
 
         // Create the particle system
         GameObject pso = new GameObject();
+        pso.transform.parent = Floor.transform;
+
         ParticleSystem ps = pso.AddComponent<ParticleSystem>();
         ps.gravityModifier = 1.0f;
         ps.loop = false;

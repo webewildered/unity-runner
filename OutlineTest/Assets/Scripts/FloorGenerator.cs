@@ -13,6 +13,12 @@ public class FloorGenerator : MonoBehaviour
         TransitionIn
     }
 
+    public static FloorGenerator Instance
+    {
+        get { return instance; }
+    }
+    static FloorGenerator instance;
+
     State state = State.Play;
 
     const float baseWidth = 40.0f;
@@ -21,8 +27,7 @@ public class FloorGenerator : MonoBehaviour
     public float Res = 0.5f;
     public bool BuildObstacles = true;
     public Material MeshMaterial;
-
-    Vector3 up = new Vector3(0f, 1f, 0f);
+    
     Rng rng;
 
     // Curve state
@@ -44,7 +49,6 @@ public class FloorGenerator : MonoBehaviour
     public Queue<Vector4> Planes;
 
     // When crossed, remove an old section and add a new one
-    // TODO a queue instead?
     public Queue<Vector4> TriggerPlanes;
     Queue<GameObject> sections;
 
@@ -322,7 +326,7 @@ public class FloorGenerator : MonoBehaviour
     {
         int vertexIndex = block.Vertices.Count;
 
-        Vector3 vert = up * block.Height;
+        Vector3 vert = Util.Up * block.Height;
         block.Vertices.Add(left);
         block.Vertices.Add(left + vert);
         block.Vertices.Add(left + vert);
@@ -348,8 +352,8 @@ public class FloorGenerator : MonoBehaviour
         // Add vertices connecting to the previous section
         vertices.Add(lastCenter - lastArm);
         vertices.Add(lastCenter + lastArm);
-        normals.Add(up);
-        normals.Add(up);
+        normals.Add(Util.Up);
+        normals.Add(Util.Up);
 
         int numSteps = (int)(length / Res) + 1;
         int vertexIndex = vertices.Count;
@@ -376,8 +380,8 @@ public class FloorGenerator : MonoBehaviour
             Vector3 arm = new Vector3(cosAngle, 0.0f, -sinAngle) * width * 0.5f;
             vertices.Add(center - arm);
             vertices.Add(center + arm);
-            normals.Add(up);
-            normals.Add(up);
+            normals.Add(Util.Up);
+            normals.Add(Util.Up);
 
             // Add triangles
             triangles.Add(vertexIndex);
@@ -437,10 +441,13 @@ public class FloorGenerator : MonoBehaviour
             center += forward * Res;
             t += Res;
 
+            Vector4 plane = new Vector4(forward.x, forward.y, forward.z, Vector3.Dot(forward, center));
+            Planes.Enqueue(plane);
+
             const int triggerStep = 10;
             if (i == triggerStep)
             {
-                TriggerPlanes.Enqueue(new Vector4(forward.x, forward.y, forward.z, Vector3.Dot(forward, center)));
+                TriggerPlanes.Enqueue(plane);
             }
         }
     }
@@ -462,6 +469,7 @@ public class FloorGenerator : MonoBehaviour
         center = Vector3.zero;
         lastCenter = Vector3.zero;
         lastArm = Vector3.zero;
+        lastWidth = baseWidth;
         t = 0.0f;
         angle = 0.0f;
 
@@ -695,6 +703,13 @@ public class FloorGenerator : MonoBehaviour
             const float margin = 5.0f;
             float prefabStart = t + margin;
             float prefabEnd = t + length - margin;
+
+            if (challenge == 0)
+            {
+                // First one, add a little extra runway at the start
+                prefabStart += 50.0f;
+            }
+
             while (prefabStart < prefabEnd)
             {
                 int maxType = Math.Min((int)PrefabType.Divide + prefabChallenge, (int)PrefabType.Count);
@@ -870,6 +885,8 @@ public class FloorGenerator : MonoBehaviour
 
     void Start()
     {
+        instance = this;
+
         if (!EditorMode)
         {
             restart();
@@ -893,14 +910,16 @@ public class FloorGenerator : MonoBehaviour
     }
 
     float postPlayTimer;
-    Vector3 initialPosition;
     Quaternion initialRotation;
-    Vector3 targetPosition;
     Quaternion targetRotation;
+    Vector3 transitionPivot;
+    Vector3 transitionArm;
     float transitionFactor;
     const float transitionGain = 5.0f;
     const float transitionAngle = 45.0f;
     const float transitionDistance = 25.0f;
+
+    public Runner Runner;
 
     public void OnPlayerDied()
     {
@@ -922,18 +941,15 @@ public class FloorGenerator : MonoBehaviour
                     {
 
                         // Set up the transition out animation
-                        initialPosition = transform.position;
                         initialRotation = transform.rotation;
-                        Vector3 pivot = Camera.main.transform.position;
-                        Vector3 arm = pivot - transform.position;
+                        transitionPivot = Camera.main.transform.position;
+                        transitionPivot.y = 0;
+                        transitionArm = Quaternion.Inverse(initialRotation) * (transitionPivot - transform.position);
                         Vector3 axis = Camera.main.transform.right;
                         Quaternion rotation = Quaternion.AngleAxis(transitionAngle, axis);
-                        Vector3 targetArm = rotation * arm;
-                        Vector3 targetDisplacement = new Vector3(0, -transitionDistance, 0);
-                        targetPosition = pivot + targetDisplacement - targetArm;
-                        targetRotation = transform.rotation * rotation; // or is it the other way around
-                        transitionFactor = 1.0f;
+                        targetRotation = rotation * transform.rotation; // or is it the other way around
 
+                        transitionFactor = 1.0f;
                         state = State.TransitionOut;
                     }
                 }
@@ -955,21 +971,22 @@ public class FloorGenerator : MonoBehaviour
 
                     // Reorient so that after transitioning back in, the new level will begin right behind the camera
                     // and run in the camera's forward direction
-                    Vector3 up = new Vector3(0, 1, 0);
-                    Vector3 right = Vector3.Cross(up, Camera.main.transform.forward);
-                    Vector3 forward = Vector3.Cross(right, up);
-                    Vector3 curveForward = new Vector3(0, 0, 1);
-                    initialPosition = Camera.main.transform.position - 10.0f * forward;
-                    initialPosition.y = 0.0f;
-                    initialRotation = Quaternion.FromToRotation(curveForward, forward);
-                    targetPosition = initialPosition + new Vector3(0, -transitionDistance, 0);
-                    targetRotation = Quaternion.AngleAxis(transitionAngle, new Vector3(1, 0, 0)) * initialRotation;
+                    Vector3 right = Vector3.Cross(Util.Up, Camera.main.transform.forward);
+                    Vector3 forward = Vector3.Cross(right, Util.Up);
+                    transitionPivot = Camera.main.transform.position;
+                    transitionPivot.y = 0;
+                    transitionArm = 10.0f * Util.Forward;
+                    initialRotation = Quaternion.FromToRotation(Util.Forward, forward);
+                    targetRotation = Quaternion.AngleAxis(transitionAngle, right) * initialRotation;
+
+                    // Start the player's transition animation
+                    Runner.Reset();
 
                 }
 
                 // Interpolate transform
-                transform.position = initialPosition * transitionFactor + targetPosition * (1.0f - transitionFactor);
                 transform.rotation = Quaternion.Slerp(targetRotation, initialRotation, transitionFactor);
+                transform.position = transitionPivot - transform.rotation * transitionArm + new Vector3(0, -transitionDistance * (1.0f - transitionFactor), 0);
                 break;
             }
             case State.TransitionIn:
@@ -986,8 +1003,8 @@ public class FloorGenerator : MonoBehaviour
                 }
 
                 // Interpolate transform TODO move to a function
-                transform.position = initialPosition * transitionFactor + targetPosition * (1.0f - transitionFactor);
                 transform.rotation = Quaternion.Slerp(targetRotation, initialRotation, transitionFactor);
+                transform.position = transitionPivot - transform.rotation * transitionArm + new Vector3(0, -transitionDistance * (1.0f - transitionFactor), 0);
 
                 break;
             }

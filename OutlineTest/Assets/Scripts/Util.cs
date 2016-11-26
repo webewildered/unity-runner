@@ -7,4 +7,14 @@ public class Util
     {
         return Mathf.Min(g * Time.deltaTime, 1.0f);
     }
+
+    public static Vector3 Up
+    {
+        get { return new Vector3(0, 1, 0); }
+    }
+
+    public static Vector3 Forward
+    {
+        get { return new Vector3(0, 0, 1); }
+    }
 }

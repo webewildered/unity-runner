@@ -66,6 +66,7 @@
 				shade = clamp(ceil(shade), 0, 2);	// 0 if dot<low, 1 if between low and high, 2 if over high
 				float bias = ((i.position.x + i.position.y - 1.0) % 2.0 );	// 0 or 1 for every other pixel
 				float shadeFactor = floor((shade + bias) / 2.0);	// darken every pixel with shade=2, every other pixel with shade=1, no pixel with shade = 0
+				shadeFactor = 0; // not using it for now
 
 				// Highlighting
 				const float minHighlight = 1.98f;
