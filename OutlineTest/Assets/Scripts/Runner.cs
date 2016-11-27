@@ -17,6 +17,8 @@ public class Runner : MonoBehaviour
     public Camera DeathCamera;
     public FloorGenerator Floor;
 
+    public bool DebugInfinitePower = false;
+
     Animator animator;
     float speed;
     float angularSpeed;
@@ -143,7 +145,8 @@ public class Runner : MonoBehaviour
                 {
                     // Check jump
                     if (Input.GetKeyDown("joystick button 0") &&
-                        animator.GetCurrentAnimatorStateInfo(0).IsName("Run"))
+                        animator.GetCurrentAnimatorStateInfo(0).IsName("Run") && 
+                        (power > 0 || DebugInfinitePower))
                     {
                         // Transition to jump
                         const float jumpSpeed = 40.0f;
@@ -153,10 +156,12 @@ public class Runner : MonoBehaviour
                         state = State.Jumping;
                         velocity += (jumpSpeed - Vector3.Dot(velocity, up)) * up;
                         angularSpeed = 0.0f;
+                        power--;
                     }
 
                     // Check bomb
-                    if (Input.GetKeyDown("joystick button 1"))
+                    if (Input.GetKeyDown("joystick button 1") &&
+                        (power > 0 || DebugInfinitePower))
                     {
                         const float bombRadius = 30.0f;
                         Collider[] bombHits = Physics.OverlapSphere(transform.position, bombRadius);
@@ -168,6 +173,7 @@ public class Runner : MonoBehaviour
                                 obstacle.Bomb(transform.position, bombRadius);
                             }
                         }
+                        power--;
                     }
                 }
                 else
