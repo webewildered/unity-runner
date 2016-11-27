@@ -39,6 +39,9 @@ public class FloorGenerator : MonoBehaviour
     float lastWidth = baseWidth;
     float widthV = 0.0f;
 
+    const float powerupSpace = 200.0f;
+    float powerupDistance = 0.0f;
+
     // When true, use whatever levels were created in the editor
     public bool EditorMode = false;
     
@@ -51,6 +54,8 @@ public class FloorGenerator : MonoBehaviour
     // When crossed, remove an old section and add a new one
     public Queue<Vector4> TriggerPlanes;
     Queue<GameObject> sections;
+
+    public GameObject PowerupPrefab;
 
     class Block : IComparable<Block>
     {
@@ -89,9 +94,27 @@ public class FloorGenerator : MonoBehaviour
             }
             if (Start == other.Start)
             {
+                if (Left < other.Left)
+                {
+                    return -1;
+                }
                 return 0;
             }
             return 1;
+        }
+    }
+
+    class Powerup
+    {
+        public float Time;
+        public float Position;
+        public Vector3 SampledPosition;
+
+        public Powerup(float time, float position)
+        {
+            Time = time;
+            Position = position;
+            SampledPosition = Vector3.zero;
         }
     }
 
@@ -100,10 +123,12 @@ public class FloorGenerator : MonoBehaviour
         // Returns derivative of the curve's angle with respect to time
         public abstract void Sample(float t, out float deltaAngle, out float width);
         public List<Block> Blocks; // Must be sorted by time
+        public List<Powerup> Powerups; // x is time, y is horizontal position 0 to 1
 
         public Curve()
         {
             Blocks = new List<Block>();
+            Powerups = new List<Powerup>();
         }
     }
 
@@ -312,14 +337,19 @@ public class FloorGenerator : MonoBehaviour
         block.Triangles.Add(v3);
     }
 
+    Vector3 curvePos(Vector3 center, Vector3 arm, float x)
+    {
+        return center + (x * 2.0f - 1.0f) * arm;
+    }
+
     Vector3 blockLeft(Block block, Vector3 center, Vector3 arm)
     {
-        return center + (block.Left * 2.0f - 1.0f) * arm;
+        return curvePos(center, arm, block.Left);
     }
 
     Vector3 blockRight(Block block, Vector3 center, Vector3 arm)
     {
-        return center + (block.Right * 2.0f - 1.0f) * arm;
+        return curvePos(center, arm, block.Right);
     }
 
     int appendBlockVertices(Block block, Vector3 left, Vector3 right)
@@ -359,6 +389,7 @@ public class FloorGenerator : MonoBehaviour
         int vertexIndex = vertices.Count;
         int lastFloorVertexIndex = 0;
         int minBlockIndex = 0;
+        int minPowerupIndex = 0;
         for (int i = 0; i < numSteps; i++)
         {
             // Calculate current angle
@@ -434,6 +465,22 @@ public class FloorGenerator : MonoBehaviour
                 }
             }
 
+            // Add powerups
+            while (minPowerupIndex < curve.Powerups.Count)
+            {
+                Powerup powerup = curve.Powerups[minPowerupIndex];
+                if (powerup.Time > t)
+                {
+                    break;
+                }
+
+                minPowerupIndex++;
+                Vector3 p1 = curvePos(lastCenter, lastArm, powerup.Position);
+                Vector3 p0 = curvePos(center, arm, powerup.Position);
+                float factor = t - powerup.Time / Res;
+                powerup.SampledPosition = p1 * factor + p0 * (1 - factor);
+            }
+
             // Move to next position
             lastCenter = center;
             lastArm = arm;
@@ -472,6 +519,7 @@ public class FloorGenerator : MonoBehaviour
         lastWidth = baseWidth;
         t = 0.0f;
         angle = 0.0f;
+        powerupDistance = powerupSpace / 2.0f;
 
         Planes = new Queue<Vector4>();
         TriggerPlanes = new Queue<Vector4>();
@@ -541,7 +589,7 @@ public class FloorGenerator : MonoBehaviour
         float areaDepth = end - start;
 
         int sizeX = Mathf.RoundToInt(areaWidth / 0.05f);
-        int sizeZ = Mathf.RoundToInt(areaDepth / 1.0f);
+        int sizeZ = Mathf.FloorToInt(areaDepth / 1.0f);
         float resX = areaWidth / sizeX;
         float resZ = areaDepth / sizeZ;
 
@@ -828,6 +876,171 @@ public class FloorGenerator : MonoBehaviour
             }
         }
 
+        // Scatter in powerups
+        float powerupPosition = powerupDistance / Res;
+        int blockIndex = 5; // Not at the very beginning of the section
+        float powerupSize = 0.1f;
+        while (powerupPosition < length - 20)
+        {
+            // Find the first block after the desired distance
+            float minPosition = 0;
+            float maxPosition = 1;
+            while (blockIndex < curve.Blocks.Count)
+            {
+                Block block = curve.Blocks[blockIndex];
+                if (block.Start > powerupPosition)
+                {
+                    break;
+                }
+                if (block.Start + block.Duration > powerupPosition - powerupSize / Res)
+                {
+                    if (block.Left < powerupSize)
+                    {
+                        minPosition = Math.Max(minPosition, block.Right);
+                    }
+                    if (block.Right > powerupSize)
+                    {
+                        maxPosition = Math.Min(maxPosition, block.Left);
+                    }
+                }
+                blockIndex++;
+            }
+
+            // If we got to the end, or if the block is a significant way past the desired distance, try to put the powerup next to an edge instead
+            if (blockIndex == curve.Blocks.Count || curve.Blocks[blockIndex].Start > powerupPosition + 25.0f / Res)
+            {
+                if (maxPosition - minPosition < powerupSize)
+                {
+                    float x = rng.Flip() ? minPosition + powerupSize / 2.0f : maxPosition - powerupSize / 2.0f;
+                    curve.Powerups.Add(new Powerup(powerupPosition, x));
+                }
+                // Else: unexpected, just give up
+            }
+            else
+            {
+                // There may be multiple blocks at the same start position, choose among them randomly
+                int testIndex = blockIndex + 1;
+                while (testIndex < curve.Blocks.Count && curve.Blocks[testIndex].Start == curve.Blocks[blockIndex].Start)
+                {
+                    testIndex++;
+                }
+                blockIndex = rng.Range(blockIndex, testIndex);
+                Block block = curve.Blocks[blockIndex];
+
+                // Two ways to place, either between this block and another, or straight in front of this block.
+                // Randomly pick one method to try first.  If it fails, try the other.
+                int firstMode = rng.Range(0, 2);
+                const int searchRange = 15;
+                for (int iMethod = 0; iMethod < 2; iMethod++)
+                {
+                    int method = (iMethod + firstMode) & 1;
+                    bool success = false;
+                    if (method == 0)
+                    {
+                        // See if there is a neighboring block we can squeeze against
+                        for (int iSearch = 0; iSearch < 2 * searchRange; iSearch++)
+                        {
+                            testIndex = blockIndex + iSearch / 2 * ((iSearch & 1) * 2 - 1);
+                            if (testIndex < 0)
+                            {
+                                continue;
+                            }
+                            if (testIndex > curve.Blocks.Count)
+                            {
+                                continue;
+                            }
+
+                            // See if their start/duration overlaps
+                            Block other = curve.Blocks[testIndex];
+                            if (other.Start <= block.Start + block.Duration &&
+                                other.Start + other.Duration >= block.Start)
+                            {
+                                // See if there's room between them
+                                float diffLeft = block.Left - other.Right;
+                                float diffRight = other.Left - block.Right;
+                                float x;
+                                if (diffLeft >= powerupSize && diffLeft <= 2.0f * powerupSize)
+                                {
+                                    x = (block.Left + other.Right) / 2.0f;
+                                }
+                                else if (diffRight >= powerupSize && diffRight <= 2.0f * powerupSize)
+                                {
+                                    x = (other.Left + block.Right) / 2.0f;
+                                }
+                                else
+                                {
+                                    // No room
+                                    continue;
+                                }
+
+                                // Choose a random time in the overlapping interval
+                                float start = Math.Max(block.Start, other.Start);
+                                float end = Math.Max(block.Start + block.Duration, other.Start + other.Duration);
+                                float t;
+                                if (end - start > powerupSize)
+                                {
+                                    t = rng.Range(start + powerupSize / 2.0f, end - powerupSize / 2.0f);
+                                }
+                                else
+                                {
+                                    t = (end + start) / 2.0f;
+                                }
+
+                                // Check if there's some reasonable clearance in front of and behind the chosen position
+                                if (checkClearance(curve, blockIndex, t - 5.0f, t + 5.0f, x - powerupSize / 2.0f, x + powerupSize / 2.0f, 15))
+                                {
+                                    curve.Powerups.Add(new Powerup(t, x));
+                                    powerupPosition = t;
+                                    success = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Check for clearance in front of the block
+                        if (!checkClearance(curve, blockIndex, block.Start - 5.0f, block.Start - 0.1f, block.Left, block.Right, searchRange))
+                        {
+                            continue;
+                        }
+
+                        // Check for clearance on either side
+                        int startSide = rng.Range(0, 2);
+                        for (int iSide = 0; iSide < 2; iSide++)
+                        {
+                            int side = (iSide + startSide) & 1;
+                            float sideMin;
+                            float sideMax;
+                            if (side == 0)
+                            {
+                                sideMin = block.Left - 2.0f * powerupSize;
+                                sideMax = block.Left - 0.1f;
+                            }
+                            else
+                            {
+                                sideMin = block.Right + 0.1f;
+                                sideMax = block.Right + 2.0f * powerupSize;
+                            }
+                            if (checkClearance(curve, blockIndex, block.Start - 5.0f, block.Start + 5.0f, sideMin, sideMax, searchRange))
+                            {
+                                curve.Powerups.Add(new Powerup(block.Start - 2.5f, block.Right - powerupSize / 2.0f));
+                                success = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (success)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            powerupPosition += powerupSpace;
+        }
+
         // Build the section mesh
         List<Vector3> vertices = new List<Vector3>();
         List<Vector3> normals = new List<Vector3>();
@@ -863,12 +1076,39 @@ public class FloorGenerator : MonoBehaviour
             obstacle.Block = block.Sampled;
             obstacle.Block.Height = block.Height;
             obstacle.MeshMaterial = MeshMaterial;
+            obstacle.name = "block" + i;
 
             renderer = blockObj.AddComponent<MeshRenderer>();
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             setMesh(blockObj, block.Vertices.ToArray(), block.Normals.ToArray(), block.Triangles.ToArray());
             renderer.material = MeshMaterial;
         }
+
+        // Create game object for each powerup
+        for (int i = 0; i < curve.Powerups.Count; i++)
+        {
+            Powerup powerup = curve.Powerups[i];
+            GameObject powerupObj = (GameObject)Instantiate(PowerupPrefab, section.transform);
+            powerupObj.transform.localPosition = powerup.SampledPosition;
+        }
+    }
+
+    bool checkClearance(Curve curve, int startIndex, float tMin, float tMax, float xMin, float xMax, int searchRange)
+    {
+        int minIndex = Math.Max(0, startIndex - searchRange);
+        int maxIndex = Math.Min(curve.Blocks.Count, startIndex + searchRange);
+        for (int blockIndex = minIndex; blockIndex < maxIndex; blockIndex++)
+        {
+            Block block = curve.Blocks[blockIndex];
+            if (block.Start <= tMax && 
+                block.Start + block.Duration >= tMin &&
+                block.Left <= xMax &&
+                block.Right >= xMin)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     void setMesh(GameObject gameObject, Vector3[] vertices, Vector3[] normals, int[] triangles)
@@ -916,7 +1156,7 @@ public class FloorGenerator : MonoBehaviour
     Vector3 transitionArm;
     float transitionFactor;
     const float transitionGain = 5.0f;
-    const float transitionAngle = 45.0f;
+    const float transitionAngle = 70.0f;
     const float transitionDistance = 25.0f;
 
     public Runner Runner;

@@ -108,11 +108,12 @@ public class Obstacle : MonoBehaviour
         return mesh;
     }
 
-    void makeChunk(Mesh mesh, Vector3 position)
+    void makeChunk(Mesh mesh, Vector3 offset)
     {
         GameObject chunk = new GameObject();
         chunk.transform.parent = FloorGenerator.Instance.transform;
-        chunk.transform.localPosition = position;
+        chunk.transform.localPosition = offset;
+        chunk.transform.localRotation = Quaternion.identity;
         chunk.layer = 9; // Debris layer
 
         MeshFilter filter = chunk.AddComponent<MeshFilter>();

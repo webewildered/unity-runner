@@ -34,8 +34,11 @@ public class Runner : MonoBehaviour
     Vector3 targetCameraOffsetLs;
     Vector3 targetCameraPositionWs;
 
-    Quaternion rotationUp;      // Rotation about the up axis
-    Quaternion rotationForward; // Rotation about the forward axis, after rotationUp
+    float angleUp;      // Rotation about the world space up axis
+    float angleForward; // Rotation about the local space forward axis
+    float angleRight;   // Rotation about the local space right axis
+
+    int power;
 
     const float baseSpeed = 15.0f;
 
@@ -47,6 +50,9 @@ public class Runner : MonoBehaviour
     // Layer mask for collision with everything other than the character and debris
     const int layerMask = ~((1 << 8) | (1 << 9));
 
+    // Gain used for camera position
+    const float cameraGain = 10.0f;
+
     void Start()
     {
         animator = GetComponent<Animator>();
@@ -55,11 +61,21 @@ public class Runner : MonoBehaviour
         up.Set(0, 1, 0);
         acceleration = 0.05f;
         state = State.Running;
+        power = 0;
 
-        rotationUp = Quaternion.identity;
-        rotationForward = Quaternion.identity;
+        angleUp = 0.0f;
+        angleForward = 0.0f;
+        angleRight = 0.0f;
 
-        targetCameraOffsetLs = new Vector3(0.0f, 3.0f, -6.0f);
+        const float pitch = 25.0f;
+        angleRight = pitch;
+
+        targetCameraOffsetLs = new Vector3(0.0f, 6.0f, -4.0f);
+    }
+
+    void OnTriggerEnter(Collider other)
+    {
+        power++;
     }
 
     bool checkGround(out RaycastHit hit)
@@ -136,6 +152,7 @@ public class Runner : MonoBehaviour
                         animator.SetTrigger("Jump");
                         state = State.Jumping;
                         velocity += (jumpSpeed - Vector3.Dot(velocity, up)) * up;
+                        angularSpeed = 0.0f;
                     }
 
                     // Check bomb
@@ -213,9 +230,9 @@ public class Runner : MonoBehaviour
         switch (state)
         {
             case State.Running:
-                const float maxAngularSpeed = 65.0f;
-                const float angularSpeedGain = 10.0f;
-                const float maxAngularAcceleration = 180.0f;
+                const float maxAngularSpeed = 60.0f;
+                const float angularSpeedGain = 7.0f;
+                const float maxAngularAcceleration = 135.0f;
 
                 // Rotate the character
                 float desiredAngularSpeed = leftX * maxAngularSpeed * speed;
@@ -224,10 +241,10 @@ public class Runner : MonoBehaviour
                 angularSpeed += angularSpeedChange2; // TODO timestep independent gain?
 
                 float deltaAngle = angularSpeed * Time.deltaTime;
-                rotationUp = Quaternion.AngleAxis(deltaAngle, up) * rotationUp;
+                angleUp += deltaAngle;
 
                 // Move the character forward
-                characterForward = rotationUp * new Vector3(0, 0, 1);
+                characterForward = Quaternion.AngleAxis(angleUp, Util.Up) * Util.Forward;
                 float forwardSpeed = baseSpeed * speed;
                 transform.position += characterForward * (forwardSpeed * Time.deltaTime);
 
@@ -265,7 +282,7 @@ public class Runner : MonoBehaviour
                 float horizontalSpeedChange2 = Mathf.Sign(horizontalSpeedChange) * Mathf.Min(maxHorizontalAcceleration * speed * Time.deltaTime, Mathf.Abs(horizontalSpeedChange));
                 velocity += horizontalSpeedChange2 * right;
 
-                rotationForward = Quaternion.AngleAxis(-horizontalSpeed, characterForward);
+                angleForward = -horizontalSpeed;
 
                 break;
 
@@ -301,11 +318,13 @@ public class Runner : MonoBehaviour
         if (state != State.Gliding)
         {
             const float rotationForwardGain = 10.0f;
-            rotationForward = Quaternion.Slerp(rotationForward, Quaternion.identity, Util.Gain(rotationForwardGain));
+            angleForward -= angleForward * Util.Gain(rotationForwardGain);
         }
 
         // Set the character rotation
-        transform.rotation = rotationUp * rotationForward;
+        Quaternion rotationUp = Quaternion.AngleAxis(angleUp, Util.Up);
+        Vector3 forwardAxis = rotationUp * Util.Forward;
+        transform.rotation = Quaternion.AngleAxis(angleForward, forwardAxis) * rotationUp;
 
         // Have the camera follow the player
         //if (state != State.Falling)
@@ -321,8 +340,14 @@ public class Runner : MonoBehaviour
             targetCameraRotationWs = tilt * targetCameraRotationWs;
         }
 
+        // Pitch the camera
+        {
+            Vector3 r = targetCameraRotationWs * new Vector3(1, 0, 0);
+            Quaternion pitch = Quaternion.AngleAxis(angleRight, r);
+            targetCameraRotationWs = pitch * targetCameraRotationWs;
+        }
+
         // Update the camera
-        const float cameraGain = 10.0f;
         const float cameraAngularGain = 4.0f;
         Camera camera = Camera.main;
         camera.transform.position += (targetCameraPositionWs - camera.transform.position) * Util.Gain(cameraGain);
