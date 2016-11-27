@@ -365,8 +365,12 @@ public class Runner : MonoBehaviour
         Vector3 dir = transform.position - lastPosition;
         sphereRay.direction = dir;
         sphereRay.direction.Normalize();
-        if (Physics.SphereCast(sphereRay, 0.4f, dir.magnitude, layerMask))
+
+        RaycastHit hitInfo;
+        if (Physics.SphereCast(sphereRay, 0.4f, out hitInfo, dir.magnitude, layerMask))
         {
+            Debug.Log("Hit " + hitInfo.collider.gameObject.name + "(" + hitInfo.collider.gameObject.layer + ")");
+
             // Transition to dead
             state = State.Dying;
             DeathCamera.GetComponent<DeathSnapshot>().Snap(velocity);

@@ -39,8 +39,8 @@ public class FloorGenerator : MonoBehaviour
     float lastWidth = baseWidth;
     float widthV = 0.0f;
 
-    const float powerupSpace = 200.0f;
-    float powerupDistance = 0.0f;
+    const float powerupSpace = 100.0f;
+    float powerupPosition = 0.0f;
 
     // When true, use whatever levels were created in the editor
     public bool EditorMode = false;
@@ -131,6 +131,22 @@ public class FloorGenerator : MonoBehaviour
             Powerups = new List<Powerup>();
         }
     }
+
+    class WidthModifier : Curve
+    {
+        public Curve BaseCurve;
+        public List<Vector3> Changes; // x is time, y and z are left and right width multipliers
+
+        public WidthModifier(Curve baseCurve)
+        {
+            BaseCurve = baseCurve;
+            Changes.Add(new Vector3(0, 1, 1));
+        }
+
+        public override void Sample(float t, out float deltaAngle, out float width)
+        {
+            BaseCurve.Sample(t, deltaAngle, width);
+        }
 
     class MultiCurve : Curve
     {
@@ -374,10 +390,11 @@ public class FloorGenerator : MonoBehaviour
         return vertexIndex;
     }
 
-    void appendCurve(Curve curve, float length, ref List<Vector3> vertices, ref List<Vector3> normals, ref List<int> triangles)
+    void appendCurve(Curve curve, float length)
     {
-        // Build a random mesh
-        //Random.InitState((int)System.DateTime.Now.Ticks);
+        List<Vector3> vertices = new List<Vector3>();
+        List<Vector3> normals = new List<Vector3>();
+        List<int> triangles = new List<int>();
 
         // Add vertices connecting to the previous section
         vertices.Add(lastCenter - lastArm);
@@ -497,6 +514,51 @@ public class FloorGenerator : MonoBehaviour
                 TriggerPlanes.Enqueue(plane);
             }
         }
+
+        // Create an game object to hold the new section
+        GameObject section = new GameObject();
+        section.transform.parent = transform;
+        section.transform.localPosition = Vector3.zero; // Mesh is built in floor-space
+        section.transform.localRotation = Quaternion.identity;
+        section.AddComponent<MeshFilter>();
+        section.AddComponent<MeshCollider>();
+        MeshRenderer renderer = section.AddComponent<MeshRenderer>();
+        setMesh(section, vertices.ToArray(), normals.ToArray(), triangles.ToArray());
+        renderer.material = MeshMaterial;
+
+        sections.Enqueue(section);
+
+        // Create game object for each block
+        for (int i = 0; i < curve.Blocks.Count; i++)
+        {
+            Block block = curve.Blocks[i];
+            GameObject blockObj = new GameObject();
+            blockObj.transform.parent = section.transform;
+            blockObj.AddComponent<MeshFilter>();
+            blockObj.AddComponent<MeshCollider>();
+            blockObj.transform.localPosition = Vector3.zero; // Mesh is built in floor-space
+            blockObj.transform.localRotation = Quaternion.identity;
+
+            Obstacle obstacle = blockObj.AddComponent<Obstacle>();
+            obstacle.Block = block.Sampled;
+            obstacle.Block.Height = block.Height;
+            obstacle.MeshMaterial = MeshMaterial;
+            obstacle.name = "block" + i;
+
+            renderer = blockObj.AddComponent<MeshRenderer>();
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            setMesh(blockObj, block.Vertices.ToArray(), block.Normals.ToArray(), block.Triangles.ToArray());
+            renderer.material = MeshMaterial;
+        }
+
+        // Create game object for each powerup
+        for (int i = 0; i < curve.Powerups.Count; i++)
+        {
+            Powerup powerup = curve.Powerups[i];
+            GameObject powerupObj = (GameObject)Instantiate(PowerupPrefab);
+            powerupObj.transform.parent = section.transform;
+            powerupObj.transform.localPosition = powerup.SampledPosition;
+        }
     }
 
     public void Clear()
@@ -519,10 +581,11 @@ public class FloorGenerator : MonoBehaviour
         lastWidth = baseWidth;
         t = 0.0f;
         angle = 0.0f;
-        powerupDistance = powerupSpace / 2.0f;
+        powerupPosition = powerupSpace;
 
-        Planes = new Queue<Vector4>();
-        TriggerPlanes = new Queue<Vector4>();
+        Planes.Clear();
+        TriggerPlanes.Clear();
+
         sections = new Queue<GameObject>();
         nextChallenge = BaseChallenge;
     }
@@ -560,6 +623,8 @@ public class FloorGenerator : MonoBehaviour
 
     FloorGenerator()
     {
+        Planes = new Queue<Vector4>();
+        TriggerPlanes = new Queue<Vector4>();
         resetSeed(1234567890);
     }
 
@@ -581,17 +646,51 @@ public class FloorGenerator : MonoBehaviour
 
     void fill(Curve curve, float start, float end, float left, float right, int challenge, int sizeChallenge)
     {
+        // Choose maximum block dimensions.
+        int maxWidth, maxDepth;
+        int dimType = rng.Range(0, 10);
+        if (dimType < 6 || challenge < 2)
+        {
+            // 60% of the time, use the normal limits
+            maxWidth = 3;
+            maxDepth = 3;
+        }
+        else if (dimType == 7 || challenge < 4)
+        {
+            // 10% of the time, smaller limits
+            maxWidth = 2;
+            maxDepth = 2;
+        }
+        else if (dimType == 8)
+        {
+            // 10% of the time, small blocks
+            maxWidth = 1;
+            maxDepth = 1;
+        }
+        else
+        {
+            // 10% of the time, wide blocks
+            maxWidth = 3;
+            maxDepth = 1;
+        }
+
+        // Track the number of blocks in the array before additions are made for the fill region.
+        // Each block added is checked for overlaps with others in the fill region, other blocks are not checked,
+        // it's assumed that the fill region doesn't overlap any existing blocks.
         int numBlocks = curve.Blocks.Count;
+
+        // Choose the amount of area the blocks should cover as a fraction of the fill region's total area, scaled by challenge
         float area = (end - start) * (right - left);
-        float targetArea = challengeValue(0.01f, 0.05f, challenge) * area; // Area to fill with obstacles
+        float targetArea = challengeValue(0.025f, 0.06f, challenge) * area; // Area to fill with obstacles
 
-        float areaWidth = right - left;
-        float areaDepth = end - start;
+        // Choose a base block size that will tile the fill region evenly.
+        float fillWidth = right - left;
+        float fillDepth = end - start;
 
-        int sizeX = Mathf.RoundToInt(areaWidth / 0.05f);
-        int sizeZ = Mathf.FloorToInt(areaDepth / 1.0f);
-        float resX = areaWidth / sizeX;
-        float resZ = areaDepth / sizeZ;
+        int sizeX = Mathf.RoundToInt(fillWidth / 0.05f);
+        int sizeZ = Mathf.FloorToInt(fillDepth / 1.0f);
+        float resX = fillWidth / sizeX;
+        float resZ = fillDepth / sizeZ;
 
         const int maxIterations = 1000;
         int itr = 0;
@@ -600,13 +699,14 @@ public class FloorGenerator : MonoBehaviour
             if (itr > maxIterations)
             {
                 // Something went wrong or we got incredibly unlucky, don't loop forever
+                UnityEngine.Debug.LogWarning("FloorGenerator.fill() exceeded maxIterations");
                 break;
             }
             itr++;
 
             // Choose random block dimensions and placement
-            int blockWidthInt = Mathf.RoundToInt(rng.Range(resX, challengeValue(resX, 0.2f, sizeChallenge)) / resX);
-            int blockDepthInt = Mathf.RoundToInt(rng.Range(resZ, challengeValue(resZ, 3.0f, sizeChallenge)) / resZ);
+            int blockWidthInt = rng.Range(1, maxWidth + 1);
+            int blockDepthInt = rng.Range(1, maxDepth + 1);
             int blockLeftInt = rng.Range(0, sizeX - blockWidthInt + 1);
             int blockStartInt = rng.Range(0, sizeZ - blockDepthInt + 1);
 
@@ -615,8 +715,7 @@ public class FloorGenerator : MonoBehaviour
             float blockStart = start + blockStartInt * resZ;
             float blockEnd = blockStart + blockDepthInt * resZ;
 
-            // See if it overlaps another block in this fill area.  Assuming no other blocks
-            // are placed in the fill area.
+            // See if it overlaps another block in this fill area
             bool overlap = false;
             for (int i = numBlocks; i < curve.Blocks.Count; i++)
             {
@@ -648,7 +747,8 @@ public class FloorGenerator : MonoBehaviour
                 curve.Blocks.Add(block);
             }
 
-            targetArea -= (blockRight - blockLeft) * (blockEnd - blockStart);
+            const float blockPenalty = 0.2f; // Add a fixed "penalty" for blocks to make regions with smaller blocks less dense
+            targetArea -= (blockRight - blockLeft) * (blockEnd - blockStart) + blockPenalty;
         }
     }
 
@@ -877,157 +977,105 @@ public class FloorGenerator : MonoBehaviour
         }
 
         // Scatter in powerups
-        float powerupPosition = powerupDistance / Res;
-        int blockIndex = 5; // Not at the very beginning of the section
+        powerupPosition = Math.Max( t + 30.0f, powerupPosition);
+        int blockIndex = 0;
         float powerupSize = 0.1f;
-        while (powerupPosition < length - 20)
+        while (powerupPosition < t + length - 20)
         {
-            // Find the first block after the desired distance
-            float minPosition = 0;
-            float maxPosition = 1;
+            Block block;
             while (blockIndex < curve.Blocks.Count)
             {
-                Block block = curve.Blocks[blockIndex];
+                block = curve.Blocks[blockIndex];
                 if (block.Start > powerupPosition)
                 {
                     break;
                 }
-                if (block.Start + block.Duration > powerupPosition - powerupSize / Res)
-                {
-                    if (block.Left < powerupSize)
-                    {
-                        minPosition = Math.Max(minPosition, block.Right);
-                    }
-                    if (block.Right > powerupSize)
-                    {
-                        maxPosition = Math.Min(maxPosition, block.Left);
-                    }
-                }
                 blockIndex++;
             }
 
-            // If we got to the end, or if the block is a significant way past the desired distance, try to put the powerup next to an edge instead
-            if (blockIndex == curve.Blocks.Count || curve.Blocks[blockIndex].Start > powerupPosition + 25.0f / Res)
+            if (blockIndex == curve.Blocks.Count)
             {
-                if (maxPosition - minPosition < powerupSize)
-                {
-                    float x = rng.Flip() ? minPosition + powerupSize / 2.0f : maxPosition - powerupSize / 2.0f;
-                    curve.Powerups.Add(new Powerup(powerupPosition, x));
-                }
-                // Else: unexpected, just give up
+                break;
             }
-            else
+
+            const int searchRange = 20;
+            int type = rng.Range(0, 4);
+            if (type < 2)
             {
-                // There may be multiple blocks at the same start position, choose among them randomly
-                int testIndex = blockIndex + 1;
-                while (testIndex < curve.Blocks.Count && curve.Blocks[testIndex].Start == curve.Blocks[blockIndex].Start)
+                // 1/4 of powerups try to place randomly, somewhere that has a bit of clearance in front and behind
+                // 1/4 place next to an edge
+                const int maxTries = 100;
+                for (int i = 0; i < maxTries; i++)
                 {
-                    testIndex++;
-                }
-                blockIndex = rng.Range(blockIndex, testIndex);
-                Block block = curve.Blocks[blockIndex];
-
-                // Two ways to place, either between this block and another, or straight in front of this block.
-                // Randomly pick one method to try first.  If it fails, try the other.
-                int firstMode = rng.Range(0, 2);
-                const int searchRange = 15;
-                for (int iMethod = 0; iMethod < 2; iMethod++)
-                {
-                    int method = (iMethod + firstMode) & 1;
-                    bool success = false;
-                    if (method == 0)
+                    float tPowerup = rng.Range(powerupPosition - 25.0f, powerupPosition + 25.0f);
+                    float x;
+                    if (type == 0)
                     {
-                        // See if there is a neighboring block we can squeeze against
-                        for (int iSearch = 0; iSearch < 2 * searchRange; iSearch++)
-                        {
-                            testIndex = blockIndex + iSearch / 2 * ((iSearch & 1) * 2 - 1);
-                            if (testIndex < 0)
-                            {
-                                continue;
-                            }
-                            if (testIndex > curve.Blocks.Count)
-                            {
-                                continue;
-                            }
-
-                            // See if their start/duration overlaps
-                            Block other = curve.Blocks[testIndex];
-                            if (other.Start <= block.Start + block.Duration &&
-                                other.Start + other.Duration >= block.Start)
-                            {
-                                // See if there's room between them
-                                float diffLeft = block.Left - other.Right;
-                                float diffRight = other.Left - block.Right;
-                                float x;
-                                if (diffLeft >= powerupSize && diffLeft <= 2.0f * powerupSize)
-                                {
-                                    x = (block.Left + other.Right) / 2.0f;
-                                }
-                                else if (diffRight >= powerupSize && diffRight <= 2.0f * powerupSize)
-                                {
-                                    x = (other.Left + block.Right) / 2.0f;
-                                }
-                                else
-                                {
-                                    // No room
-                                    continue;
-                                }
-
-                                // Choose a random time in the overlapping interval
-                                float start = Math.Max(block.Start, other.Start);
-                                float end = Math.Max(block.Start + block.Duration, other.Start + other.Duration);
-                                float t;
-                                if (end - start > powerupSize)
-                                {
-                                    t = rng.Range(start + powerupSize / 2.0f, end - powerupSize / 2.0f);
-                                }
-                                else
-                                {
-                                    t = (end + start) / 2.0f;
-                                }
-
-                                // Check if there's some reasonable clearance in front of and behind the chosen position
-                                if (checkClearance(curve, blockIndex, t - 5.0f, t + 5.0f, x - powerupSize / 2.0f, x + powerupSize / 2.0f, 15))
-                                {
-                                    curve.Powerups.Add(new Powerup(t, x));
-                                    powerupPosition = t;
-                                    success = true;
-                                    break;
-                                }
-                            }
-                        }
+                        x = rng.Flip() ? powerupSize : -powerupSize;
                     }
                     else
                     {
-                        // Check for clearance in front of the block
-                        if (!checkClearance(curve, blockIndex, block.Start - 5.0f, block.Start - 0.1f, block.Left, block.Right, searchRange))
+                        x = rng.Range(0.0f, 1.0f);
+                    }
+                    if (checkClearance(curve, blockIndex, tPowerup - 5.0f, tPowerup + 5.0f, x - powerupSize / 2.0f, x + powerupSize / 2.0f, searchRange))
+                    {
+                        curve.Powerups.Add(new Powerup(tPowerup, x));
+                        powerupPosition = tPowerup;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                // Other 1/2 of powerups try to place next to a block
+                const int blockRange = 10;
+                for (int iSearch = 0; iSearch < 2 * blockRange; iSearch++)
+                {
+                    // Search from block index outwards
+                    int testIndex = blockIndex + iSearch / 2 * ((iSearch & 1) * 2 - 1);
+
+                    // skip invalid index
+                    if (testIndex < 0)
+                    {
+                        continue;
+                    }
+                    if (testIndex > curve.Blocks.Count)
+                    {
+                        continue;
+                    }
+
+                    // Only short blocks
+                    Block testBlock = curve.Blocks[testIndex];
+                    if (testBlock.Duration > 3.0f)
+                    {
+                        continue;
+                    }
+
+                    int startSide = rng.Range(0, 2);
+                    bool success = false;
+                    for (int iSide = 0; iSide < 2; iSide++)
+                    {
+                        int side = iSide ^ startSide;
+                        float min, max;
+                        const float bias = 0.0f; // shouldn't need anymore?
+                        if (side == 0)
                         {
-                            continue;
+                            min = testBlock.Left - powerupSize - bias;
+                            max = testBlock.Left - bias;
+                        }
+                        else
+                        {
+                            min = testBlock.Right + bias;
+                            max = testBlock.Right + powerupSize + bias;
                         }
 
-                        // Check for clearance on either side
-                        int startSide = rng.Range(0, 2);
-                        for (int iSide = 0; iSide < 2; iSide++)
+                        float tPowerup = testBlock.Start + testBlock.Duration / 2.0f;
+                        if (checkClearance(curve, blockIndex, tPowerup - 5.0f, tPowerup + 5.0f, min, max, searchRange))
                         {
-                            int side = (iSide + startSide) & 1;
-                            float sideMin;
-                            float sideMax;
-                            if (side == 0)
-                            {
-                                sideMin = block.Left - 2.0f * powerupSize;
-                                sideMax = block.Left - 0.1f;
-                            }
-                            else
-                            {
-                                sideMin = block.Right + 0.1f;
-                                sideMax = block.Right + 2.0f * powerupSize;
-                            }
-                            if (checkClearance(curve, blockIndex, block.Start - 5.0f, block.Start + 5.0f, sideMin, sideMax, searchRange))
-                            {
-                                curve.Powerups.Add(new Powerup(block.Start - 2.5f, block.Right - powerupSize / 2.0f));
-                                success = true;
-                                break;
-                            }
+                            curve.Powerups.Add(new Powerup(tPowerup, (min + max) / 2.0f));
+                            powerupPosition = tPowerup;
+                            success = true;
+                            break;
                         }
                     }
 
@@ -1037,73 +1085,39 @@ public class FloorGenerator : MonoBehaviour
                     }
                 }
             }
-
             powerupPosition += powerupSpace;
         }
 
         // Build the section mesh
-        List<Vector3> vertices = new List<Vector3>();
-        List<Vector3> normals = new List<Vector3>();
-        List<int> triangles = new List<int>();
         finalizeCurve(curve);
-        appendCurve(curve, length, ref vertices, ref normals, ref triangles);
+        appendCurve(curve, length);
+    }
 
-        // Create an game object to hold the new section
-        GameObject section = new GameObject();
-        section.transform.parent = transform;
-        section.transform.localPosition = Vector3.zero; // Mesh is built in floor-space
-        section.transform.localRotation = Quaternion.identity;
-        section.AddComponent<MeshFilter>();
-        section.AddComponent<MeshCollider>();
-        MeshRenderer renderer = section.AddComponent<MeshRenderer>();
-        setMesh(section, vertices.ToArray(), normals.ToArray(), triangles.ToArray());
-        renderer.material = MeshMaterial;
-
-        sections.Enqueue(section);
-
-        // Create game object for each block
-        for(int i = 0; i < curve.Blocks.Count; i++)
-        {
-            Block block = curve.Blocks[i];
-            GameObject blockObj = new GameObject();
-            blockObj.transform.parent = section.transform;
-            blockObj.AddComponent<MeshFilter>();
-            blockObj.AddComponent<MeshCollider>();
-            blockObj.transform.localPosition = Vector3.zero; // Mesh is built in floor-space
-            blockObj.transform.localRotation = Quaternion.identity;
-
-            Obstacle obstacle = blockObj.AddComponent<Obstacle>();
-            obstacle.Block = block.Sampled;
-            obstacle.Block.Height = block.Height;
-            obstacle.MeshMaterial = MeshMaterial;
-            obstacle.name = "block" + i;
-
-            renderer = blockObj.AddComponent<MeshRenderer>();
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            setMesh(blockObj, block.Vertices.ToArray(), block.Normals.ToArray(), block.Triangles.ToArray());
-            renderer.material = MeshMaterial;
-        }
-
-        // Create game object for each powerup
-        for (int i = 0; i < curve.Powerups.Count; i++)
-        {
-            Powerup powerup = curve.Powerups[i];
-            GameObject powerupObj = (GameObject)Instantiate(PowerupPrefab, section.transform);
-            powerupObj.transform.localPosition = powerup.SampledPosition;
-        }
+    public void AppendRandom(int challenge)
+    {
+        Curve curve = new ConstantCurve(0, baseWidth);
+        const float length = 100.0f;
+        fill(curve, t, t + length, 0, 1, challenge, 0);
+        finalizeCurve(curve);
+        appendCurve(curve, length);
     }
 
     bool checkClearance(Curve curve, int startIndex, float tMin, float tMax, float xMin, float xMax, int searchRange)
     {
+        if (xMin < 0 || xMax > 1)
+        {
+            return false;
+        }
+
         int minIndex = Math.Max(0, startIndex - searchRange);
         int maxIndex = Math.Min(curve.Blocks.Count, startIndex + searchRange);
         for (int blockIndex = minIndex; blockIndex < maxIndex; blockIndex++)
         {
             Block block = curve.Blocks[blockIndex];
-            if (block.Start <= tMax && 
-                block.Start + block.Duration >= tMin &&
-                block.Left <= xMax &&
-                block.Right >= xMin)
+            if (block.Start < tMax && 
+                block.Start + block.Duration > tMin &&
+                block.Left < xMax &&
+                block.Right > xMin)
             {
                 return false;
             }
