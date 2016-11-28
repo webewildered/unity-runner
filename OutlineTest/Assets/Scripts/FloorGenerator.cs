@@ -41,6 +41,7 @@ public class FloorGenerator : MonoBehaviour
     float angle = 0.0f;
     float leftV = 0.0f;
     float rightV = 0.0f;
+    int specialTimer = 0; // Number of sections until the next special
 
     const float powerupSpace = 100.0f;
     float powerupPosition = 0.0f;
@@ -582,6 +583,7 @@ public class FloorGenerator : MonoBehaviour
         t = 0.0f;
         angle = 0.0f;
         powerupPosition = powerupSpace;
+        specialTimer = 6;
 
         Planes.Clear();
         TriggerPlanes.Clear();
@@ -600,14 +602,18 @@ public class FloorGenerator : MonoBehaviour
 
     enum PrefabType
     {
-        Strait,
+        Narrow,
         Jig1,
         Random,
         Divide,
         Wall,
         Divide2,
         Divide3,
-        Count
+        Strait,
+        Forest,
+        Hall,
+        Count,
+        Empty // For testing only
     };
 
     enum CurveType
@@ -800,17 +806,22 @@ public class FloorGenerator : MonoBehaviour
 
         // Build the curve
         int curveChallenge = challenges[(int)ChallengeType.Curve];
-        int curveIntensity = 0;
-        if (curveChallenge > 0)
+        int curveIntensity;
+        CurveType curveType;
+        if (curveChallenge == 0)
         {
-            curveIntensity = rng.Range(1, curveChallenge + 1);
-            curveChallenge -= curveIntensity;
+            curveType = CurveType.Constant;
+            curveIntensity = 0;
         }
-        float curveWidth = baseWidth;
+        else
+        {
+            curveType = (CurveType)rng.Range(0, Math.Min(curveChallenge - 1, (int)CurveType.Count));
+            curveIntensity = curveChallenge - (int)curveType;
+        }
 
         Curve curve;
         float direction = rng.PlusOrMinusOne();
-        CurveType curveType = (CurveType)curveChallenge;
+        float curveWidth = baseWidth;
         switch (curveType)
         {
             case CurveType.Constant:
@@ -871,23 +882,27 @@ public class FloorGenerator : MonoBehaviour
             {
                 int maxType = Math.Min((int)PrefabType.Divide + prefabChallenge, (int)PrefabType.Count);
                 PrefabType type = (PrefabType)rng.Range(0, maxType);
-                //type = PrefabType.Strait; // TEST
-                /*
+                //type = PrefabType.Narrow; // TEST
                 if (iTest == 0)
                 {
-                    type = PrefabType.Random;
+                    type = PrefabType.Hall;
                 }
                 else
                 {
-                    type = PrefabType.Jig1;
+                    type = PrefabType.Empty;
                 }
                 iTest = iTest ^ 1;
-                */
 
                 float heightScale = challengeValue(1.0f, 4.0f, prefabChallenge);
                 switch (type)
                 {
-                    case PrefabType.Strait:
+                    case PrefabType.Empty:
+                    {
+                        // Debug only
+                        prefabStart += 15.0f;
+                        break;
+                    }
+                    case PrefabType.Narrow:
                     {
                         float reduction = challengeValue(0.4f, 0.8f, prefabChallenge);
                         float factorLeft = 1.0f;
@@ -1001,11 +1016,159 @@ public class FloorGenerator : MonoBehaviour
                         break;
                     }
 
+                    case PrefabType.Strait:
+                    {
+                        // Add some clearance before
+                        prefabStart += 10.0f;
+
+                        // Add a narrow passage
+                        float width = 0.1f;
+                        widthMod.Changes.Add(new Vector3(prefabStart, width, width));
+
+                        float duration = Mathf.Round(challengeValue(10.0f, 25.0f, prefabChallenge));
+                        prefabStart += duration;
+                        widthMod.Changes.Add(new Vector3(prefabStart, width, width));
+
+                        // Add some clearance after
+                        prefabStart += 10.0f;
+                    }
+
+                    case PrefabType.Forest:
+                    {
+                        float duration = 40.0f;
+                        float blockWidth = 0.05f;
+
+                        bool extended = (prefabChallenge >= 8 || rng.Flip());
+                        if (extended)
+                        {
+                            duration *= 2;
+                        }
+
+                        float end = prefabStart + duration;
+
+                        int period;
+                        if (prefabChallenge < 6)
+                        {
+                            period = 5;
+                        }
+                        else if (prefabChallenge < 8 || rng.Flip())
+                        {
+                            period = 3;
+                        }
+                        else
+                        {
+                            period = 4;
+                        }
+
+                        float periodWidth = period * blockWidth;
+                        int angle = rng.Range(1, period);
+                        float space = Mathf.Round(challengeValue(8.0f, 5.0f, prefabChallenge));
+                        float blockHeight = challengeValue(1.0f, 10.0f, Math.Max(0, prefabChallenge - 8));
+
+                        float offset = rng.Range(0, period) * blockWidth;
+                        while (prefabStart < end)
+                        {
+                            float x = offset;
+                            while (x <= 1.0f - blockWidth)
+                            {
+                                Block block = new Block();
+                                block.Start = prefabStart;
+                                block.Duration = 1.0f;
+                                block.Height = blockHeight;
+                                block.Left = x;
+                                block.Right = x + blockWidth;
+                                curve.Blocks.Add(block);
+                                x += periodWidth;
+                            }
+
+                            if (extended && prefabStart > end - duration / 2.0f)
+                            {
+                                angle *= -1;
+                                extended = false; // only switch direction once
+                            }
+
+                            offset += angle * blockWidth;
+                            if (offset >= periodWidth)
+                            {
+                                offset -= periodWidth;
+                            }
+                            if (offset < 0)
+                            {
+                                offset += periodWidth;
+                            }
+
+                            prefabStart += space;
+                        }
+
+                        break;
+                    }
+
+                    case PrefabType.Hall:
+                    {
+                        int count;
+                        if (challenge < 7)
+                        {
+                            count = 2;
+                        }
+                        else if (challenge < 9 || rng.Flip())
+                        {
+                            count = 3;
+                        }
+                        else
+                        {
+                            count = 4;
+                        }
+
+                        // Add some clearance space at the beginning
+                        const float clearanceSpace = 7.0f;
+                        prefabStart += clearanceSpace;
+
+                        float blockHeight = challengeValue(2.0f, 3.0f, Math.Max(0, prefabChallenge - 8));
+
+                        float edgeWallSize = 0.025f;
+                        float minExtraSize = 0.2f; // Need to be able to shift the walls around somewhat
+                        float gapSize = 0.075f;
+                        float availableSize = 1.0f - 2 * edgeWallSize - gapSize - minExtraSize;
+                        float minWallSize = 0.17f;
+                        float maxWallSize = 0.22f;
+                        int minCount = Mathf.FloorToInt(availableSize / (gapSize + maxWallSize));
+                        int maxCount = Mathf.FloorToInt(availableSize / (gapSize + minWallSize));
+                        int wallCount = rng.Range(minCount, maxCount + 1);
+                        float wallSize = availableSize / wallCount - gapSize; // leave an extra wall+gap worth of space to shift around
+                        float extraSize = availableSize + minExtraSize - wallCount * (wallSize + gapSize);
+                        float minOffset = Math.Max(edgeWallSize, extraSize - wallSize);
+                        float maxOffset = Math.Min(extraSize - edgeWallSize, wallSize);
+
+                        for (int i = 0; i < count; i++)
+                        {
+                            float offset = rng.Range(minOffset, maxOffset);
+                            float x = offset - wallSize;
+                            while (x < 1.0f)
+                            {
+                                Block block = new Block();
+                                block.Start = prefabStart;
+                                block.Duration = 1.0f;
+                                block.Height = 2.0f;
+                                block.Left = Math.Max(0.0f, x);
+                                block.Right = Math.Min(1.0f, x + wallSize);
+                                curve.Blocks.Add(block);
+                                x = block.Right + gapSize;
+                            }
+
+                            prefabStart += 22.0f;
+                        }
+
+                        // Add some clearance space at the beginning
+                        prefabStart += clearanceSpace;
+
+                        break;
+                    }
+
                     default: break;
                 }
 
                 // Add space between prefabs
-                float prefabSpace = challengeValue(25.0f, 5.0f, prefabChallenge);
+                float prefabSpace = Mathf.Round(challengeValue(25.0f, 5.0f, prefabChallenge));
                 fill(curve, prefabStart, prefabStart + prefabSpace, 0.0f, 1.0f, randomChallenge);
                 prefabStart += prefabSpace;
             }
