@@ -22,29 +22,32 @@ public class FloorGenerator : MonoBehaviour
     State state = State.Play;
 
     const float baseWidth = 40.0f;
+    const float baseHalf = baseWidth * 0.5f;
     const float minWidth = 10.0f;
 
     public float Res = 0.5f;
     public bool BuildObstacles = true;
     public Material MeshMaterial;
-    
+
     Rng rng;
 
     // Curve state
     Vector3 center = Vector3.zero;
     Vector3 lastCenter = Vector3.zero;
     Vector3 lastArm = Vector3.zero;
+    float lastLeft;
+    float lastRight;
     float t = 0.0f;
     float angle = 0.0f;
-    float lastWidth = baseWidth;
-    float widthV = 0.0f;
+    float leftV = 0.0f;
+    float rightV = 0.0f;
 
     const float powerupSpace = 100.0f;
     float powerupPosition = 0.0f;
 
     // When true, use whatever levels were created in the editor
     public bool EditorMode = false;
-    
+
     int nextChallenge;
     public int BaseChallenge = 0; // for debugging
 
@@ -121,7 +124,7 @@ public class FloorGenerator : MonoBehaviour
     abstract class Curve
     {
         // Returns derivative of the curve's angle with respect to time
-        public abstract void Sample(float t, out float deltaAngle, out float width);
+        public abstract void Sample(float t, out float deltaAngle, out float left, out float right);
         public List<Block> Blocks; // Must be sorted by time
         public List<Powerup> Powerups; // x is time, y is horizontal position 0 to 1
 
@@ -140,71 +143,46 @@ public class FloorGenerator : MonoBehaviour
         public WidthModifier(Curve baseCurve)
         {
             BaseCurve = baseCurve;
+            Blocks = baseCurve.Blocks;
+            Powerups = baseCurve.Powerups;
+
+            Changes = new List<Vector3>();
             Changes.Add(new Vector3(0, 1, 1));
         }
 
-        public override void Sample(float t, out float deltaAngle, out float width)
+        public override void Sample(float t, out float deltaAngle, out float left, out float right)
         {
-            BaseCurve.Sample(t, deltaAngle, width);
-        }
-
-    class MultiCurve : Curve
-    {
-        public struct Piece
-        {
-            public Curve Curve;
-            public float Duration;
-            public float Start; // Computed automatically
-        }
-
-        Piece[] pieces;
-        Piece lastPiece;
-
-        public MultiCurve(Piece[] pieces)
-        {
-            this.pieces = pieces;
-            float t = 0;
-            for (int i = 0; i < pieces.Length; i++)
+            BaseCurve.Sample(t, out deltaAngle, out left, out right);
+            int lastChange;
+            for (lastChange = 1; lastChange < Changes.Count; lastChange++)
             {
-                pieces[i].Start = t;
-                t += pieces[i].Duration;
-            }
-            lastPiece = pieces[0];
-        }
-
-        public override void Sample(float t, out float deltaAngle, out float width)
-        {
-            if (t < lastPiece.Start || t > lastPiece.Start + lastPiece.Duration)
-            {
-                for (int i = 0; i < pieces.Length; i++)
+                if (Changes[lastChange].x > t)
                 {
-                    lastPiece = pieces[i];
-                    if (t < lastPiece.Start + lastPiece.Duration)
-                    {
-                        break;
-                    }
+                    break;
                 }
             }
-
-            lastPiece.Curve.Sample(t - lastPiece.Start, out deltaAngle, out width);
+            lastChange--;
+            left *= Changes[lastChange].y;
+            right *= Changes[lastChange].z;
         }
     }
 
     class ConstantCurve : Curve
     {
         float deltaAngle;
-        float width;
+        float halfWidth;
 
         public ConstantCurve(float deltaAngle, float width)
         {
             this.deltaAngle = deltaAngle;
-            this.width = width;
+            halfWidth = width * 0.5f;
         }
 
-        public override void Sample(float t, out float deltaAngle, out float width)
+        public override void Sample(float t, out float deltaAngle, out float left, out float right)
         {
             deltaAngle = this.deltaAngle;
-            width = this.width;
+            left = -halfWidth;
+            right = halfWidth;
         }
     }
 
@@ -213,21 +191,22 @@ public class FloorGenerator : MonoBehaviour
         float start;
         float invPeriod;
         float magnitude;
-        float width;
+        float halfWidth;
 
         public SinCurve(float start, float length, float magnitude, float width)
         {
             this.start = start;
             invPeriod = Mathf.PI * 2.0f / length;
             this.magnitude = magnitude;
-            this.width = width;
+            halfWidth = width * 0.5f;
         }
 
-        public override void Sample(float t, out float deltaAngle, out float width)
+        public override void Sample(float t, out float deltaAngle, out float left, out float right)
         {
             t -= start;
             deltaAngle = Mathf.Sin(t * invPeriod) * magnitude;
-            width = this.width;
+            left = -halfWidth;
+            right = halfWidth;
         }
     }
 
@@ -251,14 +230,14 @@ public class FloorGenerator : MonoBehaviour
         float res;
         float start;
         float maxAngle;
-        float width;
+        float halfWidth;
         int lastTurnIndex;
 
         public ZigZagCurve(float start, float length, int approxCount, float res, float width, Rng rng)
         {
             this.start = start;
             this.res = res;
-            this.width = width;
+            halfWidth = width * 0.5f;
 
             maxAngle = 0.9f * Mathf.Asin(2 * res / width); // TODO - maybe could have problems when another curve varies the width
 
@@ -278,11 +257,12 @@ public class FloorGenerator : MonoBehaviour
             }
         }
 
-        public override void Sample(float t, out float deltaAngle, out float width)
+        public override void Sample(float t, out float deltaAngle, out float left, out float right)
         {
             t -= start;
             deltaAngle = 0.0f;
-            width = this.width;
+            left = -halfWidth;
+            right = halfWidth;
 
             if (turns[lastTurnIndex].Time > t)
             {
@@ -390,6 +370,13 @@ public class FloorGenerator : MonoBehaviour
         return vertexIndex;
     }
 
+    void gainV(ref float pos, ref float v, float target, float gain)
+    {
+        float targetV = (target - pos) * gain;
+        v = targetV * gain + v * (1.0f - gain);
+        pos = pos + v;
+    }
+
     void appendCurve(Curve curve, float length)
     {
         List<Vector3> vertices = new List<Vector3>();
@@ -410,22 +397,32 @@ public class FloorGenerator : MonoBehaviour
         for (int i = 0; i < numSteps; i++)
         {
             // Calculate current angle
-            float deltaAngle, width;
-            curve.Sample(t, out deltaAngle, out width);
+            float deltaAngle, left, right;
+            curve.Sample(t, out deltaAngle, out left, out right);
             angle += deltaAngle * Res;
+
+            // Calculate side direction
+            float cosAngle = Mathf.Cos(angle);
+            float sinAngle = Mathf.Sin(angle);
+            Vector3 direction = new Vector3(cosAngle, 0.0f, -sinAngle);
 
             // Apply width gain
             // basically a spring, works well enough
             const float widthGain = 0.2f;
-            float targetWidthV = (width - lastWidth) * widthGain;
-            widthV = targetWidthV * widthGain + widthV * (1.0f - widthGain);
-            width = lastWidth + widthV;
-            lastWidth = width;
+            //gainV(ref lastLeft, ref leftV, left, widthGain);
+            //gainV(ref lastRight, ref rightV, right, widthGain);
+
+            // TODO - not sure how I want to do this, for now: no smoothing
+            leftV = left - lastLeft;
+            lastLeft = left;
+            rightV = right - lastRight;
+            lastRight = right;
+
+            center += direction * (rightV + leftV) * 0.5f;
+            float width = lastRight - lastLeft;
 
             // Add vertices at the current position
-            float cosAngle = Mathf.Cos(angle);
-            float sinAngle = Mathf.Sin(angle);
-            Vector3 arm = new Vector3(cosAngle, 0.0f, -sinAngle) * width * 0.5f;
+            Vector3 arm = direction * width * 0.5f;
             vertices.Add(center - arm);
             vertices.Add(center + arm);
             normals.Add(Util.Up);
@@ -578,7 +575,10 @@ public class FloorGenerator : MonoBehaviour
         center = Vector3.zero;
         lastCenter = Vector3.zero;
         lastArm = Vector3.zero;
-        lastWidth = baseWidth;
+        lastLeft = -baseHalf;
+        lastRight = baseHalf;
+        leftV = 0.0f;
+        rightV = 0.0f;
         t = 0.0f;
         angle = 0.0f;
         powerupPosition = powerupSpace;
@@ -594,9 +594,7 @@ public class FloorGenerator : MonoBehaviour
     {
         Prefab,
         Random,
-        Size,
         Curve,
-        Width,
         Count
     };
 
@@ -638,13 +636,13 @@ public class FloorGenerator : MonoBehaviour
         resetSeed(seed);
         Clear();
     }
-    
+
     float challengeValue(float min, float max, int challenge)
     {
         return (max + (min - max) / Mathf.Sqrt((float)challenge + 1.0f));
     }
 
-    void fill(Curve curve, float start, float end, float left, float right, int challenge, int sizeChallenge)
+    void fill(Curve curve, float start, float end, float left, float right, int challenge)
     {
         // Choose maximum block dimensions.
         int maxWidth, maxDepth;
@@ -672,6 +670,16 @@ public class FloorGenerator : MonoBehaviour
             // 10% of the time, wide blocks
             maxWidth = 3;
             maxDepth = 1;
+        }
+
+        int maxHeight = 1;
+        if (challenge > 8)
+        {
+            maxHeight = 3;
+        }
+        else if (challenge > 4)
+        {
+            maxHeight = 2;
         }
 
         // Track the number of blocks in the array before additions are made for the fill region.
@@ -743,7 +751,7 @@ public class FloorGenerator : MonoBehaviour
                 block.Right = blockRight;
                 block.Start = blockStart;
                 block.Duration = blockEnd - blockStart;
-                block.Height = rng.Range(1.0f, challengeValue(1.5f, 3.0f, sizeChallenge));
+                block.Height = 1.0f + rng.Range(0, maxHeight) * 0.5f;
                 curve.Blocks.Add(block);
             }
 
@@ -752,7 +760,7 @@ public class FloorGenerator : MonoBehaviour
         }
     }
 
-    void divide(Curve curve, int n, float width, float duration, float prefabStart, float heightScale, int randomChallenge, int sizeChallenge)
+    void divide(Curve curve, int n, float width, float duration, float prefabStart, float heightScale, int randomChallenge)
     {
         float depth = 4.0f;
         float start = prefabStart + (duration - depth) / 2.0f;
@@ -775,8 +783,8 @@ public class FloorGenerator : MonoBehaviour
         {
             float left = (i == 0) ? 0.0f : curve.Blocks[divideBlockCount - (n - i) - 1].Right;
             float right = (i == n) ? 1.0f : curve.Blocks[divideBlockCount - (n - i)].Left;
-            fill(curve, prefabStart, prefabStart + (duration - depth) / 2.0f - offset, left, right, randomChallenge, sizeChallenge);
-            fill(curve, prefabStart + (duration + depth) / 2.0f + offset, prefabStart + duration, left, right, randomChallenge, sizeChallenge);
+            fill(curve, prefabStart, prefabStart + (duration - depth) / 2.0f - offset, left, right, randomChallenge);
+            fill(curve, prefabStart + (duration + depth) / 2.0f + offset, prefabStart + duration, left, right, randomChallenge);
         }
     }
 
@@ -792,14 +800,13 @@ public class FloorGenerator : MonoBehaviour
 
         // Build the curve
         int curveChallenge = challenges[(int)ChallengeType.Curve];
-        int widthChallenge = challenges[(int)ChallengeType.Width];
         int curveIntensity = 0;
         if (curveChallenge > 0)
         {
             curveIntensity = rng.Range(1, curveChallenge + 1);
             curveChallenge -= curveIntensity;
         }
-        float curveWidth = challengeValue(baseWidth, minWidth, widthChallenge);
+        float curveWidth = baseWidth;
 
         Curve curve;
         float direction = rng.PlusOrMinusOne();
@@ -842,12 +849,13 @@ public class FloorGenerator : MonoBehaviour
             }
         }
 
+        WidthModifier widthMod = new WidthModifier(curve);
+
         if (BuildObstacles)
         {
             // Add prefabricated obstacles
             int randomChallenge = challenges[(int)ChallengeType.Random];
             int prefabChallenge = challenges[(int)ChallengeType.Prefab];
-            int sizeChallenge = challenges[(int)ChallengeType.Size];
             const float margin = 5.0f;
             float prefabStart = t + margin;
             float prefabEnd = t + length - margin;
@@ -858,30 +866,51 @@ public class FloorGenerator : MonoBehaviour
                 prefabStart += 50.0f;
             }
 
+            int iTest = 0;
             while (prefabStart < prefabEnd)
             {
                 int maxType = Math.Min((int)PrefabType.Divide + prefabChallenge, (int)PrefabType.Count);
                 PrefabType type = (PrefabType)rng.Range(0, maxType);
-                //type = PrefabType.Divide3; // TEST
-                float heightScale = challengeValue(1.0f, 4.0f, sizeChallenge);
+                //type = PrefabType.Strait; // TEST
+                /*
+                if (iTest == 0)
+                {
+                    type = PrefabType.Random;
+                }
+                else
+                {
+                    type = PrefabType.Jig1;
+                }
+                iTest = iTest ^ 1;
+                */
+
+                float heightScale = challengeValue(1.0f, 4.0f, prefabChallenge);
                 switch (type)
                 {
                     case PrefabType.Strait:
                     {
-                        float width = challengeValue(0.15f, 0.3f, sizeChallenge);
-                        float duration = 25.0f; // depth = duration
-                        for (int i = 0; i < 2; i++)
+                        float reduction = challengeValue(0.4f, 0.8f, prefabChallenge);
+                        float factorLeft = 1.0f;
+                        float factorRight = 1.0f;
+                        int side = rng.Range(0, 3);
+                        if (prefabChallenge < 4 || side == 0)
                         {
-                            Block block = new Block();
-                            block.Start = prefabStart;
-                            block.Duration = duration;
-                            block.Height = 2.0f * heightScale;
-                            block.Left = (i == 0) ? 0.0f : (1.0f - width);
-                            block.Right = (i == 0) ? width : 1.0f;
-                            curve.Blocks.Add(block);
+                            factorLeft -= reduction / 2.0f;
+                            factorRight = 1.0f;
+                        }
+                        else if (side == 1)
+                        {
+                            factorLeft -= reduction;
+                        }
+                        else
+                        {
+                            factorRight -= reduction;
                         }
 
-                        fill(curve, prefabStart, prefabStart + duration, width, 1.0f - width, randomChallenge, sizeChallenge);
+                        float duration = 50.0f;
+                        widthMod.Changes.Add(new Vector3(prefabStart, factorLeft, factorRight));
+                        widthMod.Changes.Add(new Vector3(prefabStart + duration, factorLeft, factorRight));
+                        fill(curve, prefabStart + 1.0f, prefabStart + duration - 1.0f, 0.0f, 1.0f, randomChallenge);
 
                         prefabStart += duration;
                         break;
@@ -889,22 +918,28 @@ public class FloorGenerator : MonoBehaviour
 
                     case PrefabType.Jig1:
                     {
-                        float width = challengeValue(0.4f, 0.6f, sizeChallenge);
-                        float duration = 25.0f;
-                        float depth = 15.0f;
-                        int side = rng.Range(0, 2);
-
-                        Block block = new Block();
-                        block.Start = prefabStart + (duration - depth) / 2.0f;
-                        block.Duration = depth;
-                        block.Height = 2.0f * heightScale;
-                        block.Left = (0 == side) ? 0.0f : (1.0f - width);
-                        block.Right = (0 == side) ? width : 1.0f;
-                        curve.Blocks.Add(block);
-
-                        fill(curve, prefabStart, block.Duration, (0 == side) ? block.Right : 0.0f, (0 == side) ? 1.0f : block.Left, randomChallenge, sizeChallenge);
-                        fill(curve, block.Start, block.Duration - block.Start, 0.0f, 1.0f, randomChallenge, sizeChallenge);
-                        fill(curve, block.Start + block.Duration, prefabStart + duration, 0.0f, 1.0f, randomChallenge, sizeChallenge);
+                        float reduction = challengeValue(0.3f, 0.6f, prefabChallenge);
+                        float duration = 50.0f;
+                        float halfDuration = duration / 2.0f;
+                        int startSide = rng.Range(0, 2);
+                        for (int i = 0; i < 2; i++)
+                        {
+                            int jigSide = startSide ^ i;
+                            float factorLeft = 1.0f;
+                            float factorRight = 1.0f;
+                            if (jigSide == 1)
+                            {
+                                factorLeft -= reduction;
+                            }
+                            else
+                            {
+                                factorRight -= reduction;
+                            }
+                            float sideStart = prefabStart + i * halfDuration;
+                            widthMod.Changes.Add(new Vector3(sideStart, factorLeft, factorRight));
+                            fill(curve, sideStart + 1.0f, sideStart + halfDuration - 1.0f, 0.0f, 1.0f, randomChallenge);
+                        }
+                        widthMod.Changes.Add(new Vector3(prefabStart + duration, 1.0f, 1.0f));
 
                         prefabStart += duration;
                         break;
@@ -914,7 +949,7 @@ public class FloorGenerator : MonoBehaviour
                     {
                         float width = 0.3f;
                         float duration = 15.0f;
-                        divide(curve, 1, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
+                        divide(curve, 1, width, duration, prefabStart, heightScale, randomChallenge);
                         prefabStart += duration;
                         break;
                     }
@@ -922,7 +957,7 @@ public class FloorGenerator : MonoBehaviour
                     case PrefabType.Random:
                     {
                         float duration = 25.0f;
-                        fill(curve, prefabStart, prefabStart + duration, 0.0f, 1.0f, randomChallenge + 1, sizeChallenge);
+                        fill(curve, prefabStart, prefabStart + duration, 0.0f, 1.0f, randomChallenge + 1);
                         prefabStart += duration;
                         break;
                     }
@@ -931,7 +966,7 @@ public class FloorGenerator : MonoBehaviour
                     {
                         float duration = 25.0f;
                         float depth = 15.0f;
-                        float width = challengeValue(0.1f, 0.3f, sizeChallenge);
+                        float width = challengeValue(0.1f, 0.3f, prefabChallenge);
 
                         Block block = new Block();
                         block.Start = prefabStart + (duration - depth) / 2.0f;
@@ -941,8 +976,8 @@ public class FloorGenerator : MonoBehaviour
                         block.Right = (1.0f + width) / 2.0f;
                         curve.Blocks.Add(block);
 
-                        fill(curve, prefabStart, prefabStart + duration, 0.0f, block.Left, randomChallenge, sizeChallenge);
-                        fill(curve, prefabStart, prefabStart + duration, block.Right, 1.0f, randomChallenge, sizeChallenge);
+                        fill(curve, prefabStart, prefabStart + duration, 0.0f, block.Left, randomChallenge);
+                        fill(curve, prefabStart, prefabStart + duration, block.Right, 1.0f, randomChallenge);
 
                         prefabStart += duration;
                         break;
@@ -952,7 +987,7 @@ public class FloorGenerator : MonoBehaviour
                     {
                         float width = 0.2f;
                         float duration = 15.0f;
-                        divide(curve, 2, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
+                        divide(curve, 2, width, duration, prefabStart, heightScale, randomChallenge);
                         prefabStart += duration;
                         break;
                     }
@@ -961,7 +996,7 @@ public class FloorGenerator : MonoBehaviour
                     {
                         float width = 0.1f;
                         float duration = 15.0f;
-                        divide(curve, 3, width, duration, prefabStart, heightScale, randomChallenge, sizeChallenge);
+                        divide(curve, 3, width, duration, prefabStart, heightScale, randomChallenge);
                         prefabStart += duration;
                         break;
                     }
@@ -971,13 +1006,13 @@ public class FloorGenerator : MonoBehaviour
 
                 // Add space between prefabs
                 float prefabSpace = challengeValue(25.0f, 5.0f, prefabChallenge);
-                fill(curve, prefabStart, prefabStart + prefabSpace, 0.0f, 1.0f, randomChallenge, sizeChallenge);
+                fill(curve, prefabStart, prefabStart + prefabSpace, 0.0f, 1.0f, randomChallenge);
                 prefabStart += prefabSpace;
             }
         }
 
         // Scatter in powerups
-        powerupPosition = Math.Max( t + 30.0f, powerupPosition);
+        powerupPosition = Math.Max(t + 30.0f, powerupPosition);
         int blockIndex = 0;
         float powerupSize = 0.1f;
         while (powerupPosition < t + length - 20)
@@ -1090,14 +1125,14 @@ public class FloorGenerator : MonoBehaviour
 
         // Build the section mesh
         finalizeCurve(curve);
-        appendCurve(curve, length);
+        appendCurve(widthMod, length);
     }
 
     public void AppendRandom(int challenge)
     {
         Curve curve = new ConstantCurve(0, baseWidth);
         const float length = 100.0f;
-        fill(curve, t, t + length, 0, 1, challenge, 0);
+        fill(curve, t, t + length, 0, 1, challenge);
         finalizeCurve(curve);
         appendCurve(curve, length);
     }
@@ -1114,7 +1149,7 @@ public class FloorGenerator : MonoBehaviour
         for (int blockIndex = minIndex; blockIndex < maxIndex; blockIndex++)
         {
             Block block = curve.Blocks[blockIndex];
-            if (block.Start < tMax && 
+            if (block.Start < tMax &&
                 block.Start + block.Duration > tMin &&
                 block.Left < xMax &&
                 block.Right > xMin)
@@ -1181,9 +1216,9 @@ public class FloorGenerator : MonoBehaviour
         postPlayTimer = 0.0f;
     }
 
-    void Update ()
+    void Update()
     {
-	    switch (state)
+        switch (state)
         {
             case State.PostPlay:
             {
@@ -1263,5 +1298,5 @@ public class FloorGenerator : MonoBehaviour
                 break;
             }
         }
-	}
+    }
 }

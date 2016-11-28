@@ -202,6 +202,10 @@ public class Runner : MonoBehaviour
                         // Transition to landing
                         state = State.Running;
                         animator.SetTrigger("Land");
+
+                        Vector3 position = transform.position;
+                        position.y = 0.0f;
+                        transform.position = position;
                     }
                     else
                     {
