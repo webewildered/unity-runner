@@ -4,7 +4,7 @@ using System.Collections;
 public class MaterialManager : MonoBehaviour
 {
     public Material material;
-    new public Light light;
+    public Light light;
 	
 	// Update is called once per frame
 	void Update ()

@@ -20,6 +20,11 @@ public class Rng
         return random.Next(min, max);
     }
 
+    public bool Flip()
+    {
+        return (random.Next(0, 2) != 0);
+    }
+
     public float PlusOrMinusOne()
     {
         return (Range(0, 2) * 2 - 1);

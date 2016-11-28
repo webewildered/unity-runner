@@ -9,16 +9,23 @@ public class Runner : MonoBehaviour
         Jumping,
         Gliding,
         Falling,
-        Dead
+        Dying,
+        Dead,
+        Resetting
     };
 
     public Camera DeathCamera;
+    public FloorGenerator Floor;
+
+    public bool DebugInfinitePower = false;
 
     Animator animator;
     float speed;
     float angularSpeed;
     Vector3 up;
     float acceleration;
+
+    float distance;
 
     // state machine
     State state;
@@ -29,16 +36,26 @@ public class Runner : MonoBehaviour
     Vector3 targetCameraOffsetLs;
     Vector3 targetCameraPositionWs;
 
-   
-    Quaternion rotationUp;      // Rotation about the up axis
-    Quaternion rotationForward; // Rotation about the forward axis, after rotationUp
+    float angleUp;      // Rotation about the world space up axis
+    float angleForward; // Rotation about the local space forward axis
+    float angleRight;   // Rotation about the local space right axis
+
+    int power;
+
+    const float baseSpeed = 15.0f;
+
+    // Movement speed for the reset animation
+    const float resetFallSpeed = 10.0f;
 
     public bool IdleMode = false; // debug
 
     // Layer mask for collision with everything other than the character and debris
     const int layerMask = ~((1 << 8) | (1 << 9));
 
-    void Start ()
+    // Gain used for camera position
+    const float cameraGain = 10.0f;
+
+    void Start()
     {
         animator = GetComponent<Animator>();
         speed = 1.0f;
@@ -46,11 +63,21 @@ public class Runner : MonoBehaviour
         up.Set(0, 1, 0);
         acceleration = 0.05f;
         state = State.Running;
+        power = 0;
 
-        rotationUp = Quaternion.identity;
-        rotationForward = Quaternion.identity;
+        angleUp = 0.0f;
+        angleForward = 0.0f;
+        angleRight = 0.0f;
 
-        targetCameraOffsetLs = new Vector3(0.0f, 3.0f, -6.0f);
+        const float pitch = 25.0f;
+        angleRight = pitch;
+
+        targetCameraOffsetLs = new Vector3(0.0f, 6.0f, -4.0f);
+    }
+
+    void OnTriggerEnter(Collider other)
+    {
+        power++;
     }
 
     bool checkGround(out RaycastHit hit)
@@ -63,14 +90,36 @@ public class Runner : MonoBehaviour
         // Transition to fall
         animator.SetTrigger("Fall");
         state = State.Falling;
+        angularSpeed = 0.0f;
+        Floor.OnPlayerDied();
     }
 
-    float gain(float g)
+    public void Reset()
     {
-        return Mathf.Min(g * Time.deltaTime, 1.0f);
+        state = State.Resetting;
+
+        // Reset all properties
+        speed = 1.0f;
+        distance = 0.0f;
+
+        // Enable components that might have been disabled for dead state
+        gameObject.GetComponentInChildren<SkinnedMeshRenderer>().enabled = true;
+        gameObject.GetComponent<CapsuleCollider>().enabled = true;
+
+        // Position the character to glide in so that it lands at the correct position in front of the camera
+        Vector3 right = Vector3.Cross(Util.Up, Camera.main.transform.forward);
+        Vector3 forward = Vector3.Cross(right, Util.Up);
+        transform.rotation = Quaternion.FromToRotation(Util.Forward, forward);
+        Vector3 targetPosition = Camera.main.transform.position - transform.rotation * targetCameraOffsetLs;
+        const float resetDistance = 10.0f;
+        Vector3 resetDirection = forward * baseSpeed - Util.Up * resetFallSpeed;
+        transform.position = targetPosition - (resetDistance / resetDirection.magnitude) * resetDirection;
+
+        // Instant switch to gliding animation
+        animator.SetTrigger("GlideInstant");
     }
-	
-	void Update ()
+
+    void Update()
     {
         const float jumpingGravity = 30.0f;
 
@@ -78,12 +127,6 @@ public class Runner : MonoBehaviour
         if (IdleMode)
         {
             animator.SetTrigger("Fall");
-            return;
-        }
-
-        if (state == State.Dead)
-        {
-            GameObject.Destroy(gameObject);
             return;
         }
 
@@ -96,76 +139,94 @@ public class Runner : MonoBehaviour
         RaycastHit hit;
         switch (state)
         {
-        case State.Running:
-            // Check ground
-            if (checkGround(out hit))
-            {
-                // Check jump
-                if (Input.GetKeyDown("joystick button 0") &&
-                    animator.GetCurrentAnimatorStateInfo(0).IsName("Run"))
-                {
-                    // Transition to jump
-                    const float jumpSpeed = 40.0f;
-                    float normalizedTime = animator.GetCurrentAnimatorStateInfo(0).normalizedTime;
-                    animator.SetBool("Left", normalizedTime < 0.25f || normalizedTime > 0.75f);
-                    animator.SetTrigger("Jump");
-                    state = State.Jumping;
-                    velocity += (jumpSpeed - Vector3.Dot(velocity, up)) * up;
-                }
-
-                // Check bomb
-                if (Input.GetKeyDown("joystick button 1"))
-                {
-                    const float bombRadius = 15.0f;
-                    Collider[] bombHits = Physics.OverlapSphere(transform.position, bombRadius);
-                    foreach (Collider bombHit in bombHits)
-                    {
-                        Obstacle obstacle = bombHit.gameObject.GetComponent<Obstacle>();
-                        if (obstacle != null)
-                        {
-                            obstacle.Bomb(transform.position);
-                        }
-                    }
-                }
-            }
-            else
-            {
-                fall();
-            }
-            break;
-
-        case State.Jumping:
-            const float glideSpeed = 15.0f;
-            float upSpeed = Vector3.Dot(velocity, up);
-            if (upSpeed < glideSpeed)
-            {
-                // Transition to gliding
-                state = State.Gliding;
-                animator.SetTrigger("Glide");
-            }
-            break;
-
-        case State.Gliding:
-            if (transform.position.y + velocity.y * Time.deltaTime < 0.0f)
-            {
+            case State.Running:
+                // Check ground
                 if (checkGround(out hit))
                 {
-                    // Transition to landing
-                    state = State.Running;
-                    animator.SetTrigger("Land");
+                    // Check jump
+                    if (Input.GetKeyDown("joystick button 0") &&
+                        animator.GetCurrentAnimatorStateInfo(0).IsName("Run") && 
+                        (power > 0 || DebugInfinitePower))
+                    {
+                        // Transition to jump
+                        const float jumpSpeed = 40.0f;
+                        float normalizedTime = animator.GetCurrentAnimatorStateInfo(0).normalizedTime;
+                        animator.SetBool("Left", normalizedTime < 0.25f || normalizedTime > 0.75f);
+                        animator.SetTrigger("Jump");
+                        state = State.Jumping;
+                        velocity += (jumpSpeed - Vector3.Dot(velocity, up)) * up;
+                        angularSpeed = 0.0f;
+                        power--;
+                    }
+
+                    // Check bomb
+                    if (Input.GetKeyDown("joystick button 1") &&
+                        (power > 0 || DebugInfinitePower))
+                    {
+                        const float bombRadius = 30.0f;
+                        Collider[] bombHits = Physics.OverlapSphere(transform.position, bombRadius);
+                        foreach (Collider bombHit in bombHits)
+                        {
+                            Obstacle obstacle = bombHit.gameObject.GetComponent<Obstacle>();
+                            if (obstacle != null)
+                            {
+                                obstacle.Bomb(transform.position, bombRadius);
+                            }
+                        }
+                        power--;
+                    }
                 }
                 else
                 {
-                    // Missed the ground, fall
                     fall();
                 }
-            }
-            break;
+                break;
 
-        // No transitions from State.Falling
+            case State.Jumping:
+                const float glideSpeed = 15.0f;
+                float upSpeed = Vector3.Dot(velocity, up);
+                if (upSpeed < glideSpeed)
+                {
+                    // Transition to gliding
+                    state = State.Gliding;
+                    animator.SetTrigger("Glide");
+                }
+                break;
 
-        default:
-            break;
+            case State.Gliding:
+            case State.Resetting:
+                if (transform.position.y + velocity.y * Time.deltaTime < 0.0f)
+                {
+                    if (checkGround(out hit))
+                    {
+                        // Transition to landing
+                        state = State.Running;
+                        animator.SetTrigger("Land");
+
+                        Vector3 position = transform.position;
+                        position.y = 0.0f;
+                        transform.position = position;
+                    }
+                    else
+                    {
+                        // Missed the ground, fall
+                        fall();
+                    }
+                }
+                break;
+
+            case State.Dying:
+                state = State.Dead;
+                Floor.OnPlayerDied();
+                angularSpeed = 0.0f;
+                gameObject.GetComponentInChildren<SkinnedMeshRenderer>().enabled = false;
+                gameObject.GetComponent<CapsuleCollider>().enabled = false;
+                break;
+
+            // No transitions from State.Falling
+
+            default:
+                break;
         }
 
         //
@@ -179,22 +240,21 @@ public class Runner : MonoBehaviour
         switch (state)
         {
             case State.Running:
-                const float baseSpeed = 15.0f;
-                const float maxAngularSpeed = 65.0f;
-                const float angularSpeedGain = 10.0f;
-                const float maxAngularAcceleration = 180.0f;
+                const float maxAngularSpeed = 60.0f;
+                const float angularSpeedGain = 7.0f;
+                const float maxAngularAcceleration = 135.0f;
 
                 // Rotate the character
                 float desiredAngularSpeed = leftX * maxAngularSpeed * speed;
-                float angularSpeedChange = (desiredAngularSpeed - angularSpeed) * gain(angularSpeedGain);
+                float angularSpeedChange = (desiredAngularSpeed - angularSpeed) * Util.Gain(angularSpeedGain);
                 float angularSpeedChange2 = Mathf.Sign(angularSpeedChange) * Mathf.Min(maxAngularAcceleration * speed * Time.deltaTime, Mathf.Abs(angularSpeedChange));
                 angularSpeed += angularSpeedChange2; // TODO timestep independent gain?
 
                 float deltaAngle = angularSpeed * Time.deltaTime;
-                rotationUp = Quaternion.AngleAxis(deltaAngle, up) * rotationUp;
+                angleUp += deltaAngle;
 
                 // Move the character forward
-                characterForward = rotationUp * new Vector3(0, 0, 1);
+                characterForward = Quaternion.AngleAxis(angleUp, Util.Up) * Util.Forward;
                 float forwardSpeed = baseSpeed * speed;
                 transform.position += characterForward * (forwardSpeed * Time.deltaTime);
 
@@ -228,11 +288,11 @@ public class Runner : MonoBehaviour
                 float horizontalSpeed = Vector3.Dot(velocity, right);
 
                 float desiredHorizontalSpeed = leftX * maxHorizontalSpeed * speed;
-                float horizontalSpeedChange = (desiredHorizontalSpeed - horizontalSpeed) * gain(horizontalSpeedGain);
+                float horizontalSpeedChange = (desiredHorizontalSpeed - horizontalSpeed) * Util.Gain(horizontalSpeedGain);
                 float horizontalSpeedChange2 = Mathf.Sign(horizontalSpeedChange) * Mathf.Min(maxHorizontalAcceleration * speed * Time.deltaTime, Mathf.Abs(horizontalSpeedChange));
                 velocity += horizontalSpeedChange2 * right;
 
-                rotationForward = Quaternion.AngleAxis(-horizontalSpeed, characterForward);
+                angleForward = -horizontalSpeed;
 
                 break;
 
@@ -240,10 +300,10 @@ public class Runner : MonoBehaviour
                 const float fallingGravity = 30.0f;
                 const float airGain = 1.0f;
 
-                velocity *= (1.0f - gain(airGain));
+                velocity *= (1.0f - Util.Gain(airGain));
                 velocity -= up * fallingGravity * Time.deltaTime;
                 transform.position += velocity * Time.deltaTime;
-
+                /*
                 // Rotate the camera to look at the falling player without moving it
                 Vector3 lookDifference = transform.position - targetCameraPositionWs;
                 Vector3 lookDirection = lookDifference;
@@ -251,9 +311,14 @@ public class Runner : MonoBehaviour
                 Vector3 upDirection = Vector3.Cross(Vector3.Cross(up, lookDirection), up);
                 upDirection.Normalize();
                 targetCameraRotationWs = Quaternion.LookRotation(lookDirection, upDirection);
+                */
                 break;
 
-            // No transitions from State.Falling
+            case State.Resetting:
+                Vector3 forward = transform.rotation * Util.Forward;
+                velocity = baseSpeed * forward - resetFallSpeed * Util.Up;
+                transform.position += velocity * Time.deltaTime;
+                break;
 
             default:
                 break;
@@ -263,17 +328,21 @@ public class Runner : MonoBehaviour
         if (state != State.Gliding)
         {
             const float rotationForwardGain = 10.0f;
-            rotationForward = Quaternion.Slerp(rotationForward, Quaternion.identity, gain(rotationForwardGain));
+            angleForward -= angleForward * Util.Gain(rotationForwardGain);
         }
 
         // Set the character rotation
-        transform.rotation = rotationUp * rotationForward;
+        Quaternion rotationUp = Quaternion.AngleAxis(angleUp, Util.Up);
+        Vector3 forwardAxis = rotationUp * Util.Forward;
+        transform.rotation = Quaternion.AngleAxis(angleForward, forwardAxis) * rotationUp;
 
         // Have the camera follow the player
-        if (state != State.Falling)
+        //if (state != State.Falling)
         {
-            float cameraOffsetScale = 1.0f;// + (speed - 1.0f) * 0.5f;
-            targetCameraPositionWs = transform.TransformPoint(targetCameraOffsetLs * cameraOffsetScale);
+            if (state != State.Resetting && state != State.Falling)
+            {
+                targetCameraPositionWs = transform.TransformPoint(targetCameraOffsetLs);
+            }
             targetCameraRotationWs = transform.rotation;
 
             Vector3 forward = targetCameraRotationWs * new Vector3(0, 0, 1);
@@ -281,12 +350,18 @@ public class Runner : MonoBehaviour
             targetCameraRotationWs = tilt * targetCameraRotationWs;
         }
 
+        // Pitch the camera
+        {
+            Vector3 r = targetCameraRotationWs * new Vector3(1, 0, 0);
+            Quaternion pitch = Quaternion.AngleAxis(angleRight, r);
+            targetCameraRotationWs = pitch * targetCameraRotationWs;
+        }
+
         // Update the camera
-        const float cameraGain = 10.0f;
         const float cameraAngularGain = 4.0f;
         Camera camera = Camera.main;
-        camera.transform.position += (targetCameraPositionWs - camera.transform.position) * gain(cameraGain);
-        camera.transform.rotation = Quaternion.Slerp(camera.transform.rotation, targetCameraRotationWs, gain(cameraAngularGain));
+        camera.transform.position += (targetCameraPositionWs - camera.transform.position) * Util.Gain(cameraGain);
+        camera.transform.rotation = Quaternion.Slerp(camera.transform.rotation, targetCameraRotationWs, Util.Gain(cameraAngularGain));
 
         // Check for collision
         Ray sphereRay = new Ray();
@@ -294,15 +369,38 @@ public class Runner : MonoBehaviour
         Vector3 dir = transform.position - lastPosition;
         sphereRay.direction = dir;
         sphereRay.direction.Normalize();
-        if (Physics.SphereCast(sphereRay, 0.4f, dir.magnitude, layerMask))
+
+        RaycastHit hitInfo;
+        if (Physics.SphereCast(sphereRay, 0.4f, out hitInfo, dir.magnitude, layerMask))
         {
+            Debug.Log("Hit " + hitInfo.collider.gameObject.name + "(" + hitInfo.collider.gameObject.layer + ")");
+
             // Transition to dead
-            state = State.Dead;
+            state = State.Dying;
             DeathCamera.GetComponent<DeathSnapshot>().Snap(velocity);
+        }
+
+        // Check for plane crossings
+        Vector3 positionLocal = Floor.transform.InverseTransformPoint(transform.position);
+        while (FloorGenerator.Instance.Planes.Count > 0 &&  planeTest(positionLocal, FloorGenerator.Instance.Planes.Peek()))
+        {
+            Floor.Planes.Dequeue();
+            distance += FloorGenerator.Instance.Res;
+        }
+
+        if (FloorGenerator.Instance.TriggerPlanes.Count > 0 && planeTest(positionLocal, FloorGenerator.Instance.TriggerPlanes.Peek()))
+        {
+            Floor.TriggerPlanes.Dequeue();
+            Floor.Advance();
         }
 
         // Accelerate
         speed += acceleration * Time.deltaTime;
         animator.SetFloat("RunSpeed", speed);
+    }
+
+    bool planeTest(Vector3 position, Vector4 plane)
+    {
+        return (Vector3.Dot(position, new Vector3(plane.x, plane.y, plane.z)) - plane.w > 0);
     }
 }
