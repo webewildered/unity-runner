@@ -14,18 +14,82 @@ Platform assembly: C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\Outlin
 Loading C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\UnityEngine.UI.dll into Unity Child Domain
 Platform assembly: C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\UnityEngine.Networking.dll (this message is harmless)
 Loading C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\UnityEngine.Networking.dll into Unity Child Domain
-- Completed reload, in  0.121 seconds
+- Completed reload, in  0.122 seconds
 Platform assembly: C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\System.Core.dll (this message is harmless)
 Platform assembly: C:\Users\Max\Documents\GitHub\unity-runner\OutlineTest\OutlineTest_Data\Managed\System.dll (this message is harmless)
 <RI> Initializing input.
 <RI> Input initialized.
 desktop: 1920x1080 60Hz; virtual: 3600x1080 at 0,0
 <RI> Initialized touch support.
-UnloadTime: 0.834736 ms
+UnloadTime: 5.692672 ms
 Setting up 2 worker threads for Enlighten.
-  Thread -> id: 2798 -> priority: 1 
-  Thread -> id: 133c -> priority: 1 
-Hit block15(0)
+  Thread -> id: 6544 -> priority: 1 
+  Thread -> id: 4fa0 -> priority: 1 
+Joystick connected ("Controller (XBOX 360 For Windows)").
+ 
+(Filename:  Line: 1353)
+
+trigger (0.0, 0.0, 1.0, 268.0)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (0.0, 0.0, 1.0, -294.0)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+Hit block9(0)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (0.0, 0.0, 1.0, 268.0)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (0.0, 0.0, 1.0, -263.0)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (0.0, 0.0, 1.0, -290.7)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (0.6, 0.0, 0.8, -229.6)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (0.6, 0.0, 0.8, -472.8)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (0.1, 0.0, 1.0, -472.8)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (-0.4, 0.0, 0.9, -493.4)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (0.4, 0.0, 0.9, -194.4)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (-0.4, 0.0, 0.9, -447.3)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (-0.9, 0.0, 0.3, -485.5)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (0.0, 0.0, 1.0, 313.0)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (0.2, 0.0, 1.0, -279.0)
+ 
+(Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
+
+trigger (0.2, 0.0, 1.0, -289.3)
  
 (Filename: C:/buildslave/unity/build/artifacts/generated/common/runtime/UnityEngineDebugBindings.gen.cpp Line: 42)
 

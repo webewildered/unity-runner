@@ -38,6 +38,7 @@ public class FloorGeneratorEditor : Editor
         if (GUILayout.Button("Reset"))
         {
             floorGenerator.Reset(seed);
+            floorGenerator.transform.position = Vector3.zero;
             challenge = 0;
         }
 
@@ -59,6 +60,26 @@ public class FloorGeneratorEditor : Editor
         if (GUILayout.Button("Random+"))
         {
             floorGenerator.AppendRandom(challenge++);
+        }
+
+        if (GUILayout.Button("Zigzag"))
+        {
+            floorGenerator.AppendZigZag(challenge);
+        }
+
+        if (GUILayout.Button("Wave"))
+        {
+            floorGenerator.AppendWave(challenge);
+        }
+
+        if (GUILayout.Button("Wiggle"))
+        {
+            floorGenerator.AppendWiggle(challenge);
+        }
+
+        if (GUILayout.Button("Hourglass"))
+        {
+            floorGenerator.AppendHourglass(challenge);
         }
     }
 }
