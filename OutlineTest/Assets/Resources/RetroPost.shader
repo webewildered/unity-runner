@@ -136,9 +136,18 @@
 
 				float edgeFactor = min(1.0, dLeft + dUp * (1.0 - dUpUpLeft + dUpLeft) + pRight + pDown);
 
-				const float darken = 0.3f;
-				fixed4 col = tex2D(_MainTex, i.uv);
-				return fixed4(saturate(col.xyz * (1 - edgeFactor * darken)), 1);
+				float fogMin = 400.0f;
+				float fogMax = 500.0f;
+				float fogFactor = saturate((-vpx.position.z - fogMin) / (fogMax - fogMin));
+				float4 fogColor = float4(178.0f / 255.0f, 178.0f / 255.0f, 178.0f / 255.0f, 1);
+				//float4 fogColor = float4(0, 0, 0.15f, 1);
+
+				const float darken = 0.6f;
+				float distFactor = 0.5f - vpx.position.z / 600.0f;
+				float4 color = tex2D(_MainTex, i.uv);
+				float4 edgeColor = fixed4(saturate(color.xyz * (1 - edgeFactor * darken * distFactor)), 1);
+				float4 finalColor = edgeColor * (1.0f - fogFactor) + fogColor * fogFactor;
+				return finalColor;
 			}
 			ENDCG
 		}

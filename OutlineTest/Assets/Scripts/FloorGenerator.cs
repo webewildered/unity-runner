@@ -2,6 +2,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.Serialization.Formatters.Binary;
+using System.IO;
 
 public class FloorGenerator : MonoBehaviour
 {
@@ -21,6 +23,10 @@ public class FloorGenerator : MonoBehaviour
 
     State state = State.Play;
 
+    public bool AlwaysFireworks;
+    public bool ResetRecord;
+    public bool RandomSeed;
+
     const float baseWidth = 40.0f;
     const float baseHalf = baseWidth * 0.5f;
     const float minWidth = 10.0f;
@@ -29,6 +35,9 @@ public class FloorGenerator : MonoBehaviour
     public bool BuildObstacles = true;
     public Material MeshMaterial;
     public Material BestMaterial;
+    public Material FireworksMaterial;
+
+    public float BestDistance;
 
     bool initializing;
 
@@ -63,6 +72,15 @@ public class FloorGenerator : MonoBehaviour
     Queue<GameObject> sections;
 
     public GameObject PowerupPrefab;
+    public GameObject Firework;
+    public GameObject RecordText;
+    public GameObject Instructions;
+
+    float fireworksRate;
+    float fireworksDuration;
+    float fireworksTimer;
+    float fireworksStartTime;
+    float fireworksLookTime;
 
     class Block : IComparable<Block>
     {
@@ -291,7 +309,7 @@ public class FloorGenerator : MonoBehaviour
 
             float f = t / Length;           // 0 to 1
             float x = (f - 0.5f) * 2.0f;    // -1 to 1
-            float p = 1.3f;
+            float p = 1.2f;
             float x2 = (Mathf.Pow(Mathf.Abs(x), p) * Mathf.Sign(x) + 1.0f) / 2.0f; // 0 to 1
             deltaAngle = Mathf.Sin(x2 * 2 * Mathf.PI * count) * mag;
             left = -halfWidth;
@@ -419,6 +437,7 @@ public class FloorGenerator : MonoBehaviour
         Vector3 e0 = block.Vertices[v1] - block.Vertices[v0];
         Vector3 e1 = block.Vertices[v2] - block.Vertices[v0];
         Vector3 normal = Vector3.Cross(e0, e1);
+        normal.Normalize();
 
         block.Normals[v0] = normal;
         block.Normals[v1] = normal;
@@ -630,13 +649,13 @@ public class FloorGenerator : MonoBehaviour
 
             // Add best distance
             // TODO are we sure this code runs after the runner had a chance to load best distance?
-            if (Runner.BestDistance > 0.0f && t <= Runner.BestDistance && t + Res > Runner.BestDistance)
+            if (BestDistance > 0.0f && t <= BestDistance && t + Res > BestDistance)
             {
                 Vector3 left0 = lastCenter - lastArm;
                 Vector3 left1 = center - arm;
                 Vector3 right0 = lastCenter + lastArm;
                 Vector3 right1 = center + arm;
-                float x = (Runner.BestDistance - t) / Res;
+                float x = (BestDistance - t) / Res;
                 Vector3 bestLeft = Util.Interpolate(left0, left1, x);
                 Vector3 bestRight = Util.Interpolate(right0, right1, x);
                 Vector3 bestDir = bestRight - bestLeft;
@@ -659,6 +678,15 @@ public class FloorGenerator : MonoBehaviour
             }
         }
 
+        // TEST build UVs
+        List<Vector2> uvs = new List<Vector2>();
+        uvs.Capacity = vertices.Count;
+        float uvScale = 0.1f;
+        for (int i = 0; i < vertices.Count; i++)
+        {
+            uvs.Add(new Vector2(vertices[i].x * uvScale, vertices[i].z * uvScale));
+        }
+
         // Create an game object to hold the new section
         GameObject section = new GameObject();
         section.transform.parent = transform;
@@ -667,7 +695,7 @@ public class FloorGenerator : MonoBehaviour
         section.AddComponent<MeshFilter>();
         section.AddComponent<MeshCollider>();
         MeshRenderer renderer = section.AddComponent<MeshRenderer>();
-        setMesh(section, vertices.ToArray(), normals.ToArray(), triangles.ToArray());
+        setMesh(section, vertices.ToArray(), normals.ToArray(), triangles.ToArray(), uvs.ToArray());
         renderer.material = MeshMaterial;
 
         sections.Enqueue(section);
@@ -697,6 +725,26 @@ public class FloorGenerator : MonoBehaviour
         for (int i = 0; i < curve.Blocks.Count; i++)
         {
             Block block = curve.Blocks[i];
+
+            // TEST build block UVs
+            List<Vector2> blockUVs = new List<Vector2>();
+            blockUVs.Capacity = block.Vertices.Count;
+            float blockUvScale = 1.0f;
+            for (int j = 0; j < block.Vertices.Count; j++)
+            {
+                Vector3 n = block.Normals[j];
+                Vector3 x = new Vector3(1, 0, 0);
+                if (Mathf.Abs(Vector3.Dot(n, x)) > 0.9f)
+                {
+                    x = new Vector3(0, 1, 0);
+                }
+                Vector3 t1 = Vector3.Cross(x, n);
+                t1.Normalize();
+                Vector3 t2 = Vector3.Cross(n, t1);
+                Vector3 v = block.Vertices[j];
+                blockUVs.Add(new Vector2(Vector3.Dot(v, t1), Vector3.Dot(v, t2)) * blockUvScale);
+            }
+
             GameObject blockObj = new GameObject();
             blockObj.transform.parent = section.transform;
             blockObj.AddComponent<MeshFilter>();
@@ -712,7 +760,7 @@ public class FloorGenerator : MonoBehaviour
 
             renderer = blockObj.AddComponent<MeshRenderer>();
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            setMesh(blockObj, block.Vertices.ToArray(), block.Normals.ToArray(), block.Triangles.ToArray());
+            setMesh(blockObj, block.Vertices.ToArray(), block.Normals.ToArray(), block.Triangles.ToArray(), blockUVs.ToArray());
             renderer.material = MeshMaterial;
         }
 
@@ -1028,7 +1076,7 @@ public class FloorGenerator : MonoBehaviour
             int iTest = 0;
             while (prefabPos < prefabEnd)
             {
-                int maxType = Math.Min((int)PrefabType.Divide + prefabChallenge, (int)PrefabType.Count);
+                int maxType = Math.Min((int)PrefabType.Divide + prefabChallenge * 2, (int)PrefabType.Count);
                 PrefabType type = (PrefabType)rng.Range(0, maxType);
                 //type = PrefabType.Narrow; // TEST
                 /*
@@ -1409,7 +1457,7 @@ public class FloorGenerator : MonoBehaviour
                     {
                         continue;
                     }
-                    if (testIndex > curve.Blocks.Count)
+                    if (testIndex >= curve.Blocks.Count)
                     {
                         continue;
                     }
@@ -1648,25 +1696,60 @@ public class FloorGenerator : MonoBehaviour
         return true;
     }
 
-    void setMesh(GameObject gameObject, Vector3[] vertices, Vector3[] normals, int[] triangles)
+    void setMesh(GameObject gameObject, Vector3[] vertices, Vector3[] normals, int[] triangles, Vector2[] uvs = null)
     {
         Mesh mesh = new Mesh();
 
         mesh.vertices = vertices;
         mesh.triangles = triangles;
         mesh.normals = normals;
+        mesh.uv = uvs;
 
         gameObject.GetComponent<MeshFilter>().mesh = mesh;
         gameObject.GetComponent<MeshCollider>().sharedMesh = mesh;
+    }
+
+    string saveFilePath
+    {
+        get { return Application.persistentDataPath + "/record.bin"; }
     }
 
     void Start()
     {
         instance = this;
 
-        if (!EditorMode)
+        if (RandomSeed)
         {
-            restart();
+            resetSeed((int)System.DateTime.Now.Ticks);
+        }
+
+        if (ResetRecord)
+        {
+            BestDistance = 0.0f;
+        }
+        else
+        {
+            try
+            {
+                FileStream file = File.OpenRead(saveFilePath);
+                BinaryFormatter bf = new BinaryFormatter();
+                BestDistance = (float)bf.Deserialize(file);
+                file.Close();
+            }
+            catch (Exception e)
+            {
+                BestDistance = 0.0f;
+            }
+        }
+
+        if (EditorMode)
+        {
+            state = State.Play;
+        }
+        else
+        {
+            Clear();
+            state = State.PostPlay;
         }
     }
 
@@ -1676,6 +1759,8 @@ public class FloorGenerator : MonoBehaviour
         initializing = true;
         Append(nextChallenge++);
         TriggerPlanes.Clear(); // no trigger on the first level
+        Append(nextChallenge++);
+        Append(nextChallenge++);
         Append(nextChallenge++);
         Append(nextChallenge++);
         initializing = false;
@@ -1700,10 +1785,32 @@ public class FloorGenerator : MonoBehaviour
 
     public Runner Runner;
 
-    public void OnPlayerDied()
+    public void OnPlayerDied(float distance)
     {
         state = State.PostPlay;
         postPlayTimer = 0.0f;
+
+        if (distance > BestDistance || AlwaysFireworks)
+        {
+            BestDistance = distance;
+
+            // Show fireworks
+            float numFireworks = 3.0f + Mathf.Ceil(BestDistance / 150.0f);
+            fireworksDuration = 6.0f - 16.0f / numFireworks;
+            fireworksRate = fireworksDuration / numFireworks;
+            fireworksTimer = fireworksRate;
+
+            fireworksStartTime = fireworksDuration;
+            fireworksDuration += 0.5f;
+            fireworksLookTime = fireworksDuration;
+            fireworksDuration += 0.5f;
+
+            // save out
+            BinaryFormatter bf = new BinaryFormatter();
+            FileStream file = File.Create(saveFilePath);
+            bf.Serialize(file, BestDistance);
+            file.Close();
+        }
     }
 
     void Update()
@@ -1712,6 +1819,46 @@ public class FloorGenerator : MonoBehaviour
         {
             case State.PostPlay:
             {
+                // Do fireworks
+                fireworksDuration -= Time.deltaTime;
+                if (fireworksDuration > 0.0f)
+                {
+                    if (fireworksDuration < fireworksStartTime && fireworksDuration + Time.deltaTime >= fireworksStartTime)
+                    {
+                        Runner.LookUp();
+                        RecordText.SetActive(true);
+                        float displayDistance = Runner.DistanceFactor * BestDistance;
+                        RecordText.GetComponent<UnityEngine.UI.Text>().text = "New Record\n" + displayDistance.ToString("N1") + "m";
+                    }
+                    else if (fireworksDuration <= fireworksStartTime)
+                    {
+                        fireworksTimer -= Time.deltaTime;
+                        if (fireworksTimer < 0.0f)
+                        {
+                            fireworksTimer = fireworksRate;
+
+                            Vector3 left = Vector3.Cross(Camera.main.transform.forward, Util.Up);
+                            Vector3 forward = Vector3.Cross(Util.Up, left);
+
+                            GameObject pso = (GameObject)Instantiate(Firework);
+                            pso.transform.parent = transform;
+                            float angle = rng.Range(0.0f, 2.0f * Mathf.PI);
+                            float distance = rng.Range(0.0f, 20.0f);
+                            Vector3 center = Camera.main.transform.position + forward * 30.0f;
+                            pso.transform.position = center
+                                + distance * Mathf.Cos(angle) * forward
+                                + distance * Mathf.Sin(angle) * left
+                                + rng.Range(10.0f, 20.0f) * Util.Up;
+
+                            ParticleSystem ps = pso.GetComponent<ParticleSystem>();
+                            Material material = new Material(FireworksMaterial);
+                            Color color = Color.HSVToRGB(rng.Range(0.0f, 1.0f), rng.Range(0.9f, 1.0f), rng.Range(0.9f, 1.0f));
+                            material.SetColor("_Color", color);
+                            ps.GetComponent<Renderer>().material = material;
+                        }
+                    }
+                }
+
                 postPlayTimer += Time.deltaTime;
                 const float postPlayDelay = 0.3f;
                 if (postPlayTimer > postPlayDelay)
@@ -1728,8 +1875,16 @@ public class FloorGenerator : MonoBehaviour
                         Quaternion rotation = Quaternion.AngleAxis(transitionAngle, axis);
                         targetRotation = rotation * transform.rotation; // or is it the other way around
 
+                        RecordText.SetActive(false);
+
                         transitionFactor = 1.0f;
                         state = State.TransitionOut;
+
+                        if (Instructions != null)
+                        {
+                            Instructions.GetComponent<InstructionsFader>().enabled = true;
+                            Instructions = null;
+                        }
                     }
                 }
                 break;

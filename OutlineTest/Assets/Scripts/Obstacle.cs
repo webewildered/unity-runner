@@ -137,6 +137,8 @@ public class Obstacle : MonoBehaviour
 
     public void Bomb(Vector3 position, float radius)
     {
+        explode();
+        /*
         // if behind the camera, doesn't matter, don't do anything
         Camera camera = Camera.main;
         Bounds bounds = GetComponent<Collider>().bounds;
@@ -154,7 +156,7 @@ public class Obstacle : MonoBehaviour
         if (timer < 0.0f)
         {
             explode();
-        }
+        }*/
     }
 
     void explode()
