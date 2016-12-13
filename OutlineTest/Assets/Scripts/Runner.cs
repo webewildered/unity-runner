@@ -14,6 +14,10 @@ public class Runner : MonoBehaviour
         Resetting
     };
 
+    public static float DistanceFactor = 0.3f;
+
+    const float characterRadius = 0.4f;
+
     public Camera DeathCamera;
     public FloorGenerator Floor;
 
@@ -31,7 +35,14 @@ public class Runner : MonoBehaviour
 
     float distance; // plane-confirmed distance
     float currentDistance; // plus distance since the last plane
-    public float BestDistance;
+
+    // Bomb state
+    Vector3 bombPosition;
+    Vector3 bombDirection;
+    float bombTime;
+    const float bombDuration = 0.5f;
+    const float bombSpeed = 100.0f;
+    const float bombRadius = characterRadius * 2.0f;
 
     // state machine
     State state;
@@ -65,6 +76,10 @@ public class Runner : MonoBehaviour
     // Maximum distance from the origin, if exceeded the world is recentered
     const float maxPosition = 100.0f;   // just for testing, should be higher
 
+    const float pitchDown = 25.0f;
+    const float pitchUp = -10.0f;
+    bool lookUp;
+
     void Start()
     {
         animator = GetComponent<Animator>();
@@ -73,19 +88,27 @@ public class Runner : MonoBehaviour
         angularSpeed = 0.0f;
         up.Set(0, 1, 0);
         state = State.Running;
-        power = 0;
+        power = 3;
         distance = 0.0f;
         currentDistance = 0.0f;
-        BestDistance = 0.0f; // TODO load from wherever
 
         angleUp = 0.0f;
         angleForward = 0.0f;
-        angleRight = 0.0f;
-
-        const float pitch = 25.0f;
-        angleRight = pitch;
+        lookUp = false;
 
         targetCameraOffsetLs = new Vector3(0.0f, 6.0f, -4.0f);
+
+        bombTime = 0.0f;
+
+        setDead();
+    }
+
+    void setDead()
+    {
+        state = State.Dead;
+        angularSpeed = 0.0f;
+        gameObject.GetComponentInChildren<SkinnedMeshRenderer>().enabled = false;
+        gameObject.GetComponent<CapsuleCollider>().enabled = false;
     }
 
     void OnTriggerEnter(Collider other)
@@ -95,7 +118,8 @@ public class Runner : MonoBehaviour
 
     bool checkGround(out RaycastHit hit)
     {
-        return Physics.Raycast(transform.position + up, -2 * up, out hit, Mathf.Infinity, layerMask);
+        return Physics.SphereCast(transform.position + up, characterRadius, -2 * up, out hit, 2.0f, layerMask);
+        //return Physics.Raycast(transform.position + up, -2 * up, out hit, Mathf.Infinity, layerMask);
     }
 
     void fall()
@@ -104,25 +128,25 @@ public class Runner : MonoBehaviour
         animator.SetTrigger("Fall");
         state = State.Falling;
         angularSpeed = 0.0f;
-        Floor.OnPlayerDied();
+        Floor.OnPlayerDied(currentDistance);
         gameObject.GetComponent<CapsuleCollider>().enabled = false;
-        setBestDistance();
     }
 
-    void setBestDistance()
+    public void LookUp()
     {
-        BestDistance = Mathf.Max(BestDistance, currentDistance);
+        lookUp = true;
     }
 
     public void Reset()
     {
         state = State.Resetting;
+        lookUp = false;
 
         // Reset all properties
         speed = baseSpeedFactor;
         distance = 0.0f;
         currentDistance = 0.0f;
-        power = 0;
+        power = 3;
 
         // Enable components that might have been disabled for dead state
         gameObject.GetComponentInChildren<SkinnedMeshRenderer>().enabled = true;
@@ -171,7 +195,7 @@ public class Runner : MonoBehaviour
                 if (checkGround(out hit))
                 {
                     // Check jump
-                    const int jumpCost = 2;
+                    const int jumpCost = 3;
                     if ((Input.GetKeyDown("joystick button 0") || Input.GetKeyDown("z")) &&
                         animator.GetCurrentAnimatorStateInfo(0).IsName("Run") &&
                         (power >= jumpCost || DebugInfinitePower))
@@ -188,22 +212,17 @@ public class Runner : MonoBehaviour
                     }
 
                     // Check bomb
+                    /*
                     const int bombCost = 3;
                     if ((Input.GetKeyDown("joystick button 1") || Input.GetKeyDown("x")) &&
                         (power >= bombCost || DebugInfinitePower))
                     {
-                        const float bombRadius = 30.0f;
-                        Collider[] bombHits = Physics.OverlapSphere(transform.position, bombRadius);
-                        foreach (Collider bombHit in bombHits)
-                        {
-                            Obstacle obstacle = bombHit.gameObject.GetComponent<Obstacle>();
-                            if (obstacle != null)
-                            {
-                                obstacle.Bomb(transform.position, bombRadius);
-                            }
-                        }
+                        bombPosition = transform.position;
+                        bombDirection = transform.forward;
+                        bombTime = bombDuration;
                         power -= bombCost;
                     }
+                    */
                 }
                 else
                 {
@@ -251,12 +270,8 @@ public class Runner : MonoBehaviour
 
             case State.Dying:
             {
-                state = State.Dead;
-                Floor.OnPlayerDied();
-                angularSpeed = 0.0f;
-                gameObject.GetComponentInChildren<SkinnedMeshRenderer>().enabled = false;
-                gameObject.GetComponent<CapsuleCollider>().enabled = false;
-                setBestDistance();
+                setDead();
+                Floor.OnPlayerDied(currentDistance);
                 break;
             }
 
@@ -404,6 +419,16 @@ public class Runner : MonoBehaviour
 
         // Pitch the camera
         {
+            float angleRight;
+            if (lookUp)
+            {
+                angleRight = pitchUp;
+            }
+            else
+            {
+                angleRight = pitchDown;
+            }
+
             Vector3 r = targetCameraRotationWs * new Vector3(1, 0, 0);
             Quaternion pitch = Quaternion.AngleAxis(angleRight, r);
             targetCameraRotationWs = pitch * targetCameraRotationWs;
@@ -415,6 +440,25 @@ public class Runner : MonoBehaviour
         camera.transform.position += (targetCameraPositionWs - camera.transform.position) * Util.Gain(cameraGain);
         camera.transform.rotation = Quaternion.Slerp(camera.transform.rotation, targetCameraRotationWs, Util.Gain(cameraAngularGain));
 
+        // Check for bomb
+        if (bombTime > 0.0f)
+        {
+            Vector3 bombDelta = bombSpeed * Time.deltaTime * bombDirection;
+
+            RaycastHit[] bombHits = Physics.SphereCastAll(bombPosition, bombRadius, bombDirection);
+            foreach (RaycastHit bombHit in bombHits)
+            {
+                Obstacle obstacle = bombHit.collider.gameObject.GetComponent<Obstacle>();
+                if (obstacle != null)
+                {
+                    obstacle.Bomb(transform.position, bombRadius);
+                }
+            }
+
+            bombPosition += bombDelta;
+            bombTime -= Time.deltaTime;
+        }
+
         // Check for collision
         if (state != State.Falling)
         {
@@ -425,7 +469,7 @@ public class Runner : MonoBehaviour
             sphereRay.direction.Normalize();
 
             RaycastHit hitInfo;
-            if (Physics.SphereCast(sphereRay, 0.4f, out hitInfo, dir.magnitude, layerMask))
+            if (Physics.SphereCast(sphereRay, characterRadius, out hitInfo, dir.magnitude, layerMask))
             {
                 Debug.Log("Hit " + hitInfo.collider.gameObject.name + "(" + hitInfo.collider.gameObject.layer + ")");
 
@@ -480,10 +524,15 @@ public class Runner : MonoBehaviour
         }
 
         // Update texts
-        OrbsText.GetComponent<UnityEngine.UI.Text>().text = power.ToString();
-        const float distanceFactor = 0.3f;
-        float displayDistance = Mathf.Max(0.0f, (currentDistance) * distanceFactor);
-        DistanceText.GetComponent<UnityEngine.UI.Text>().text = displayDistance.ToString("N1") + "m";
+        OrbsText.GetComponent<UnityEngine.UI.Text>().text = "x" + power.ToString();
+        float displayDistance = Mathf.Max(0.0f, (currentDistance) * DistanceFactor);
+        string distString = displayDistance.ToString("N1") + "m";
+        if (FloorGenerator.Instance.BestDistance > 0.0f)
+        {
+            float displayBest = FloorGenerator.Instance.BestDistance * DistanceFactor;
+            distString = distString + " / " + displayBest.ToString("N1") + "m";
+        }
+        DistanceText.GetComponent<UnityEngine.UI.Text>().text = distString;
     }
 
     float rate(float factor)
